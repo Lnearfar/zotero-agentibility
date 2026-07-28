@@ -10,7 +10,7 @@ from .http import request
 
 PROTOCOL = 1
 OPERATIONS = {"health", "fulltext_adopt"}
-PATH = "/zotero-agent-library/v1/operation"
+PATH = "/zotero-paper-agent/v1/operation"
 _TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
 

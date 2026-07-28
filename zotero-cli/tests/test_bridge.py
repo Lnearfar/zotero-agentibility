@@ -39,7 +39,7 @@ class BridgeTests(unittest.TestCase):
             os.chmod(token, 0o600)
             result = BridgeClient(23119, token).health()
         request = build_opener.return_value.open.call_args.args[0]
-        self.assertEqual(request.full_url, "http://127.0.0.1:23119/zotero-agent-library/v1/operation")
+        self.assertEqual(request.full_url, "http://127.0.0.1:23119/zotero-paper-agent/v1/operation")
         self.assertEqual(request.get_header("Authorization"), "Bearer " + "a" * 64)
         self.assertEqual(
             request.data,

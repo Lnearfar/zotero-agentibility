@@ -26,5 +26,5 @@ def build_config(session_id: str | None, json_output: bool) -> RuntimeConfig:
         json_output=json_output,
         data_dir=Path(os.environ.get("ZOTERO_DATA_DIR", "~/Zotero")).expanduser(),
         port=port,
-        config_dir=Path(os.environ.get("ZOTERO_CLI_CONFIG_DIR", "~/.config/zotero-agent-library")).expanduser(),
+        config_dir=Path(os.environ.get("ZOTERO_CLI_CONFIG_DIR", "~/.config/zotero-paper-agent")).expanduser(),
     )

@@ -1,15 +1,15 @@
 {
   "manifest_version": 2,
-  "name": "Zotero Agent Library Bridge",
+  "name": "Zotero-Paper-Agent Bridge",
   "version": "0.3.0",
-  "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-agent-library",
+  "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-paper-agent",
   "applications": {
     "zotero": {
-      "id": "zotero-agent-library@local",
-      "update_url": "https://127.0.0.1:1/zotero-agent-library/updates.json",
+      "id": "zotero-paper-agent@local",
+      "update_url": "https://127.0.0.1:1/zotero-paper-agent/updates.json",
       "strict_min_version": "7.0",
       "strict_max_version": "9.*"
     }
   },
-  "author": "zotero-agent-library contributors"
+  "author": "zotero-paper-agent contributors"
 }

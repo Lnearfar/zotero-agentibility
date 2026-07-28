@@ -1,5 +1,5 @@
 /*
- * Zotero Agent Library bridge, version 0.3.0.
+ * Zotero-Paper-Agent bridge, version 0.3.0.
  *
  * Derived from cli-anything-zotero's zotero-cli-bridge/bootstrap.js and
  * substantially modified: arbitrary JavaScript execution was removed and
@@ -7,7 +7,7 @@
  * Licensed under Apache-2.0; see LICENSE and UPSTREAM.md.
  */
 
-var ENDPOINT = "/zotero-agent-library/v1/operation";
+var ENDPOINT = "/zotero-paper-agent/v1/operation";
 var PROTOCOL = 1;
 var VERSION = "0.3.0";
 var MAX_BODY_BYTES = 4096;
@@ -65,7 +65,7 @@ function _operationError(code, message, status, retryable, details) {
 function _sendOperationError(handler, error) {
   var known = !!error.bridgeCode;
   if (!known) {
-    Zotero.logError(new Error("Zotero Agent Library internal write failure"));
+    Zotero.logError(new Error("Zotero-Paper-Agent internal write failure"));
   }
   var body = {
     ok: false,
@@ -733,7 +733,7 @@ function _configDirectory() {
   var directory = Services.dirsvc.get("Home", Ci.nsIFile);
   directory.append(".config");
   _ensureDirectory(directory, 0o700, false);
-  directory.append("zotero-agent-library");
+  directory.append("zotero-paper-agent");
   _ensureDirectory(directory, 0o700, true);
   return directory;
 }
@@ -785,14 +785,14 @@ function startup() {
       }
     };
     Zotero.Server.Endpoints[ENDPOINT] = bridgeEndpoint;
-    Zotero.debug("[Zotero Agent Library] bridge endpoint registered");
+    Zotero.debug("[Zotero-Paper-Agent] bridge endpoint registered");
   }
   catch (e) {
     delete Zotero.Server.Endpoints[ENDPOINT];
     _removeServerHooks();
     bearerToken = null;
     bridgeEndpoint = null;
-    Zotero.logError(new Error("Zotero Agent Library bridge disabled: " + e.message));
+    Zotero.logError(new Error("Zotero-Paper-Agent bridge disabled: " + e.message));
   }
 }
 
@@ -801,7 +801,7 @@ function shutdown() {
   _removeServerHooks();
   bearerToken = null;
   bridgeEndpoint = null;
-  Zotero.debug("[Zotero Agent Library] bridge endpoint removed");
+  Zotero.debug("[Zotero-Paper-Agent] bridge endpoint removed");
 }
 
 function install() {}

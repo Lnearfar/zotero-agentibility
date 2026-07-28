@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
-XPI=${1:-build/zotero-agent-library-0.3.0.xpi}
+XPI=${1:-build/zotero-paper-agent-0.3.0.xpi}
 
 require() {
   grep -Fq -- "$2" "$1" || {
@@ -13,11 +13,11 @@ require() {
 }
 
 require manifest.json '"version": "0.3.0"'
-require manifest.json '"id": "zotero-agent-library@local"'
-require manifest.json '"update_url": "https://127.0.0.1:1/zotero-agent-library/updates.json"'
+require manifest.json '"id": "zotero-paper-agent@local"'
+require manifest.json '"update_url": "https://127.0.0.1:1/zotero-paper-agent/updates.json"'
 require manifest.json '"strict_min_version": "7.0"'
 require manifest.json '"strict_max_version": "9.*"'
-require bootstrap.js 'var ENDPOINT = "/zotero-agent-library/v1/operation";'
+require bootstrap.js 'var ENDPOINT = "/zotero-paper-agent/v1/operation";'
 require bootstrap.js 'var PROTOCOL = 1;'
 require bootstrap.js 'var MAX_BODY_BYTES = 4096;'
 require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt"]);'

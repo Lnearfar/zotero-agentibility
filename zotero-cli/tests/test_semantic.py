@@ -91,7 +91,7 @@ class SemanticTests(unittest.TestCase):
         first = default_index_path(self.root)
         second = default_index_path(self.root.resolve())
         self.assertEqual(first, second)
-        self.assertIn(".local/share/zotero-agent-library/index", str(first))
+        self.assertIn(".local/share/zotero-paper-agent/index", str(first))
         self.assertNotIn("zotero-mcp", str(first))
 
     def test_more_than_120_chunks_are_indexed(self):

@@ -22,7 +22,7 @@ These are earlier project decisions, not reduced search behavior:
 
 - Canonical Markdown Full Text is indexed first; the selected Source Document PDF is fallback. Zotero Notes and Annotations are excluded.
 - Markdown is indexed completely. There is no silent per-item chunk cap; a real extraction limit must set `partial` and report its covered range.
-- The index is fresh and profile-specific under `~/.local/share/zotero-agent-library/index/<zotero-profile>/`; the existing `~/.config/zotero-mcp/chroma_db` is never read, changed, or migrated.
+- The index is fresh and profile-specific under `~/.local/share/zotero-paper-agent/index/<zotero-profile>/`; the existing `~/.config/zotero-mcp/chroma_db` is never read, changed, or migrated.
 - Only Chroma's local ONNX MiniLM embedding is supported. Cloud embeddings, OpenAI Batch, query translation, and sending paper text off-machine are prohibited.
 - The installed reranker is disabled and depends on PyTorch/Transformers; it is not part of the ONNX-only runtime selected for this project.
 - Updating is explicit. There is no startup/pre-search update, watcher, daemon, or scheduled refresh.

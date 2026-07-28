@@ -29,7 +29,7 @@ def default_index_path(data_dir: Path) -> Path:
     """Return the profile-specific local index directory without creating it."""
     resolved = Path(data_dir).expanduser().resolve()
     profile_id = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()[:16]
-    return Path.home() / ".local" / "share" / "zotero-agent-library" / "index" / profile_id
+    return Path.home() / ".local" / "share" / "zotero-paper-agent" / "index" / profile_id
 
 
 def split_into_passages(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = OVERLAP) -> list[tuple[str, int, int]]:
