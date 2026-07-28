@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/doc/SKILL.md",
       "computedHash": "d86e52840e6df84cea99eff00203dc28b608cb8c1d59face922329244ff4237a"
+    },
+    "excalidraw-diagram": {
+      "source": "coleam00/excalidraw-diagram-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "fc91249969c7c1adc1f810ddfe10f18e206b78609467bb4955248e9138932e8a"
     }
   }
 }

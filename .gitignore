@@ -8,3 +8,17 @@ dist/
 migration-plan*.json
 .agents/
 .claude/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Test output
+.pytest_cache/
+.coverage
+htmlcov/

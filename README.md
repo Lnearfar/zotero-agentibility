@@ -1,186 +1,278 @@
-# zotero-agent-library
+<div align="center">
 
-Linux-first tools that let people and agents work from the same Zotero-managed literature and Full Text.
+# Zotero-Agent-Library
 
-> **Status:** v0.3.0 adds local passage-level semantic indexing and search to Zotero navigation, grounded reading, lexical finding, migration audits, and explicitly confirmed Markdown Full Text adoption. Broader Zotero ingest and management commands remain unimplemented.
+### Zotero is PDF-first. However, AI Agents need a Markdown interface for filesystem-like search, high-precision reading, and grounded citations.
 
-## Components
+[Install](#install) · [See it work](#see-it-work) · [Markdown integration](#how-it-works) · [CLI reference](#cli-reference) · [Uninstall](#uninstall)
 
-This repository contains three independently installed components:
+</div>
 
-- `zotero-cli/`: Python CLI and `zotero_cli` namespace.
-- `zotero-extension/`: authenticated fixed-operation Zotero Extension, packaged as an XPI.
-- `skills/research-with-zotero/`: portable Agent Skill.
+<p align="center">
+  <img src="./assets/readme/zotero-markdown-compatibility.png" width="100%" alt="Excalidraw diagram: Zotero keeps the PDF as Source Document, adopts canonical fulltext.md, and exposes local search, exact reading, and confirmed Full Text operations to an agent">
+</p>
 
-No component installs another one. All share the version in [`VERSION`](VERSION).
+<p align="center"><a href="./assets/readme/zotero-markdown-compatibility.excalidraw">Editable Excalidraw source</a></p>
 
-## Characteristics
+---
 
-The project follows the Ponytail principle: the shortest reliable path wins.
+> [!IMPORTANT]
+> This project reads the active local Zotero library and requires Zotero Desktop to be running. For safety, SQLite access is immutable and read-only. Paper text stays on the machine; Chroma downloads its ONNX MiniLM model once, but the project sends no paper full text to cloud embedding or LLM services and has no telemetry. The only Zotero writes in v0.3.0 are confirmed Markdown Full Text adoptions through an authenticated loopback Zotero Extension. [Uninstall](#uninstall) removes the CLI, Extension, Skill, and project state without deleting Zotero items or attachments.
 
-- One standalone CLI; no daemon, MCP server, compatibility layer, or automatic installer.
-- Python standard library, Click, and Chroma's local ONNX MiniLM runtime, using Zotero's Local API, immutable SQLite catalog, and system Poppler instead of a new service layer.
-- Markdown-first reading and semantic Passage indexing with PDF fallback and line/page provenance.
-- Explicit per-agent sessions; no hidden global working Collection.
-- Local-first behavior; v0.3.0 writes only explicitly confirmed Markdown Full Text adoptions through the authenticated Extension.
-- Three independently replaceable components rather than cross-installing components.
+## Introduction
 
-## Requirements
+### The problem with Zotero for AI agents
 
-- Linux.
-- Zotero 7–9, running with its Local API enabled.
-- Python 3.10 or newer and [`uv`](https://docs.astral.sh/uv/).
-- Poppler (`pdftotext`, `pdfinfo`).
-- `make`, `zip`, and `unzip` to build and inspect the XPI.
-- About 80 MB for Chroma's `all-MiniLM-L6-v2` ONNX model; Chroma downloads it once if it is not already cached.
+Zotero libraries are organized around PDF attachments and bibliographic records. Humans read PDFs; however, LLM-based AI agents need Markdown in plain text to read papers precisely. No project handles this complete problem in one place.
 
-On Debian/Ubuntu:
+- [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) provides broad Zotero automation, but no Markdown integration.
+- [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) provides local semantic retrieval using parsed PDFs rather than precise Markdown.
+- [`zotero-markdb-connect`](https://github.com/daeh/zotero-markdb-connect) provides Markdown-note compatibility rather than compatibility with the Markdown papers themselves.
+
+
+### What is this project?
+
+This project achieves Markdown compatibility within Zotero: a converted paper can have one Zotero-owned `fulltext.md` child attachment. The CLI prefers it for semantic Passage indexing and exact reading, falls back to the PDF when it is absent, and keeps every result tied to the Literature Item Key and source location.
+
+This repository adapts relevant behavior from [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) and [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) for the canonical Markdown attachment contract, local ONNX search, independent agent sessions, and a fixed authenticated Full Text write boundary.
+
+This project is a pack of `cli` + `skill` + `zotero-extension` for AI Agent.
+
+## Install
+
+Version 0.3.0 is Linux-only and supports Zotero 7–9. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
+
+### Option 1: Install from the command line
+
+Run these commands from a local checkout of this repository:
 
 ```bash
+cd /path/to/zotero-paper-file-system
 sudo apt install poppler-utils make zip unzip
-```
-
-PDF-to-Markdown conversion and OCR are external to this project. The Skill may orchestrate a separately installed converter, but the CLI does not install or depend on one.
-
-## Manual installation
-
-Run these steps from the repository root.
-
-### 1. CLI
-
-The new executable intentionally replaces any existing `zotero-cli` on `PATH`:
-
-```bash
 uv tool install --force ./zotero-cli
-zotero-cli --version
-```
-
-For development without installing it as a uv tool:
-
-```bash
-(cd zotero-cli && uv sync --locked && uv run zotero-cli --help)
-```
-
-### 2. Zotero Extension
-
-Build the XPI:
-
-```bash
 make -C zotero-extension
 ```
 
-In Zotero, open **Tools → Add-ons**, choose **Install Add-on From File**, select:
-
-```text
-zotero-extension/build/zotero-agent-library-0.3.0.xpi
-```
-
-Restart Zotero. On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. The Extension exposes authenticated `health` and fixed `fulltext_adopt`; it has no generic mutation or JavaScript endpoint.
-
-### 3. Agent Skill
-
-Copy the Skill manually to a directory discovered by the Agent harness. The portable default is:
+In Zotero, open **Tools → Add-ons → Install Add-on From File**, select
+`zotero-extension/build/zotero-agent-library-0.3.0.xpi`, and restart Zotero.
+Then install the Agent Skill:
 
 ```bash
-skill_dir=~/.agents/skills/research-with-zotero
+skill_dir="$HOME/.agents/skills/research-with-zotero"
 rm -rf "$skill_dir"
 mkdir -p "$skill_dir"
 cp -a skills/research-with-zotero/{SKILL.md,LICENSE,references} "$skill_dir/"
-```
 
-The root README is the installation guide. `SKILL.md` contains runtime workflow instructions only.
-
-### 4. Verify
-
-```bash
-command -v zotero-cli
-zotero-cli --help
-zotero-cli --json index status
+zotero-cli --version
 zotero-cli --json app doctor
 ```
 
-All checks should pass after Zotero and the matching Extension are running. Use `zotero-cli COMMAND --help` or `zotero-cli GROUP COMMAND --help` for command-specific arguments and options.
+### Option 2: Ask your Agent to install it
 
-## Installed locations
+```text
+Install this repository for me.
+```
 
-| Component | Default installed location |
+`doctor` checks Zotero, its Local API, the matching Extension and protocol, token permissions, Poppler, the database schema, and semantic-index readability.
+
+| What it touches | Purpose |
 | --- | --- |
-| CLI executable | `~/.local/bin/zotero-cli`; confirm with `command -v zotero-cli` |
-| CLI uv environment | `$(uv tool dir)/zotero-cli` (normally `~/.local/share/uv/tools/zotero-cli`) |
-| Zotero Extension | Active Zotero profile's `extensions/`, managed by Zotero under ID `zotero-agent-library@local` |
-| Agent Skill | `~/.agents/skills/research-with-zotero/` with the commands above, or the harness-specific skill directory you chose |
-| Bridge token and session state | `~/.config/zotero-agent-library/` |
-| Semantic index | `~/.local/share/zotero-agent-library/index/<zotero-profile>/` |
+| `~/.local/share/uv/tools/zotero-cli/` and `~/.local/bin/zotero-cli` | CLI environment and executable |
+| Active Zotero profile `extensions/` | Extension XPI, managed by Zotero |
+| `~/.agents/skills/research-with-zotero/` | Runtime Agent instructions |
+| `~/.config/zotero-agent-library/` | Mode-`0600` bridge token, sessions, and write audit |
+| `~/.local/share/zotero-agent-library/index/<profile>/` | Profile-specific Chroma Passage index |
+| Zotero attachment storage | Canonical `fulltext.md` only after an explicit confirmed adoption |
 
-The built XPI remains at `zotero-extension/build/` in the checkout. Zotero's literature database and attachment storage remain in Zotero's own data directory and are not relocated.
+<details>
+<summary><b>Development XPI upgrades</b></summary>
 
-## Uninstall
+A development build can be installed without UI automation by closing Zotero and atomically replacing `<profile>/extensions/zotero-agent-library@local.xpi`. Follow the guarded procedure in [`zotero-extension/README.md`](zotero-extension/README.md#development-install-or-upgrade); do not edit Zotero's generated `extensions.json`.
 
-1. Remove **Zotero Agent Library Bridge** in Zotero's **Tools → Add-ons**, then restart Zotero.
-2. Remove the CLI and Skill:
+</details>
 
-   ```bash
-   uv tool uninstall zotero-cli
-   rm -rf ~/.agents/skills/research-with-zotero
-   ```
+---
 
-3. Optionally remove this project's runtime state and fresh semantic index:
 
-   ```bash
-   rm -rf ~/.config/zotero-agent-library ~/.local/share/zotero-agent-library
-   ```
+## See it work
 
-Deleting runtime state does not delete Zotero items, PDFs, Markdown attachments, or the Zotero database. If installation replaced a `zotero-cli` supplied by another uv tool, reinstall that tool to restore its executable. Delete the Git checkout separately if it is no longer needed.
+The following abbreviated transcript comes from the v0.3.0 local acceptance index. It was a scoped run, not a claim of whole-library coverage.
 
-## Current CLI example
+```console
+$ zotero-cli --json index status
+{"ok":true,"code":"OK","data":{"count":21490,"item_count":147,"embedding_model":"all-MiniLM-L6-v2","source_counts":{"markdown":136,"pdf":21354},"initialized":true}}
 
-```bash
-session="${ZOTERO_CLI_SESSION:-${PI_SESSION_ID:-my-session}}"
-zotero-cli --json session create "$session"   # once
-zotero-cli --session "$session" --json ls
-zotero-cli --session "$session" --json lookup ITEM_KEY
-zotero-cli --session "$session" --json source ITEM_KEY
-zotero-cli --session "$session" --json read ITEM_KEY --start 1 --limit 200
-zotero-cli --session "$session" --json find ITEM_KEY "exact phrase" --context 8
-zotero-cli --json index update                 # explicit; never triggered by search
-zotero-cli --json search "stability proof"    # whole My Library
-zotero-cli --json search "proof" --item ITEM_KEY
-zotero-cli --session "$session" --json fulltext audit --output migration-plan.json
-# After reviewing every candidate in the plan:
-zotero-cli --session "$session" --json fulltext migrate migration-plan.json --confirm
+$ zotero-cli --json search \
+    "reinforcement learning model predictive control" \
+    --item HXHBRI3H --limit 3
+{"ok":true,"code":"OK","data":{"total_found":3,"results":[{"item_key":"HXHBRI3H","similarity_score":0.3684,"provenance":{"source_kind":"markdown","location":"lines 11-19"}}]}}
+
+$ zotero-cli read HXHBRI3H --start 11 --limit 9 > passage.txt
+[HXHBRI3H, C8TUAW4W, lines 11-19]
 ```
 
-`read --all` emits untruncated raw text. Navigation, reading, indexing, and search are local; search never updates implicitly. Full Text adoption requires `--confirm`; the current release still has no ingest, merge, or general-purpose metadata/Collection write commands.
+The search hit is a lead. The final command opens the source range that supports or rejects the claim; the Agent Skill cites verified Markdown as `[ITEM_KEY, fulltext.md, lines N–M]` and PDF evidence as `[ITEM_KEY, PDF, page N]`.
 
-## Safety and privacy
+## Getting started
 
-- Direct Zotero SQLite writes are prohibited; current SQLite access is immutable and read-only.
-- Zotero Notes and Annotations are never Markdown Full Text.
-- Tagged canonical `fulltext.md` wins over PDF and remains canonical until explicitly replaced in a future write-capable release.
-- The Extension never accepts JavaScript source.
-- There is no telemetry and no paper Full Text is sent to an external service.
-- Full Text writes are limited to My Library, replace old attachments through Zotero Trash, and are recorded in `~/.config/zotero-agent-library/audit.jsonl`; group libraries remain read-only.
+1. Confirm the local stack:
 
-## Development documentation
+   ```bash
+   zotero-cli --json app doctor
+   ```
 
-The project-local `doc` Skill is a development dependency recorded in [`skills-lock.json`](skills-lock.json). Restore it after cloning with:
+2. Build or refresh the index explicitly. Search never updates it on its own:
+
+   ```bash
+   zotero-cli --json index update
+   # Or limit the work:
+   zotero-cli --json index update --collection "/My Library/Project"
+   zotero-cli --json index update --item ITEM_KEY
+   ```
+
+3. Discover papers, then inspect and verify a candidate:
+
+   ```bash
+   zotero-cli --json search "stability proof" --limit 10
+   zotero-cli --json lookup ITEM_KEY
+   zotero-cli --json source ITEM_KEY
+   zotero-cli --json read ITEM_KEY --start 1 --limit 200
+   zotero-cli --json find ITEM_KEY "exact phrase" --context 8
+   ```
+
+4. Create one Browsing Session when Collection navigation matters:
+
+   ```bash
+   session="${ZOTERO_CLI_SESSION:-${PI_SESSION_ID:-research-1}}"
+   zotero-cli --json session create "$session"       # once
+   zotero-cli --session "$session" --json ls
+   zotero-cli --session "$session" --json cd "Project"
+   zotero-cli --session "$session" --json pwd
+   ```
+
+Use `zotero-cli --help` and nested command help as the installed syntax reference. Human-readable output is the default; agents and scripts should pass `--json`.
+
+## How it works
+
+A Literature Item keeps its stable Zotero Item Key, metadata, Collection memberships, PDF Source Document, and optional Markdown Full Text together. The CLI selects canonical Markdown first for reading and indexing. Without it, Poppler extracts the selected PDF while preserving page boundaries. Conversion itself stays outside this project; after explicit review, the Extension can import an existing Markdown child attachment as stored `fulltext.md` without rewriting its bytes.
+
+<details>
+<summary><b>Components and data flow</b></summary>
+
+| Component | Responsibility |
+| --- | --- |
+| `zotero-cli/` | Immutable catalog reads, sessions, source selection, bounded reading, local indexing/search, migration plans, and confirmed adoption requests |
+| `zotero-extension/` | Bearer-authenticated loopback `health` and `fulltext_adopt` operations implemented with Zotero APIs |
+| `skills/research-with-zotero/` | Agent workflow: session choice, retrieval routing, source verification, citation format, and mutation boundaries |
+
+Retrieval follows four steps:
+
+1. `index update` selects `fulltext.md` or the PDF fallback and stores overlapping 1,500-character Passages with 200-character overlap.
+2. Chroma's local `all-MiniLM-L6-v2` model embeds Passage text and structured item metadata. There is no per-item Passage cap.
+3. Global search over-fetches Passage candidates, keeps the best Passage per Literature Item, and returns source hashes, attachment keys, chunk offsets, and line/page locations.
+4. `read` or `find` reopens the preferred source for exact verification. Notes and Annotations never enter the source index.
+
+Version 0.3.0 has one write route. `fulltext adopt` snapshots the reviewed attachment path and SHA-256, then the Extension revalidates live Zotero state, imports a stored copy, validates `fulltext.md`, adds `zotero-cli:fulltext`, marks the unique PDF Source Document, and moves selected predecessor attachments to Zotero Trash. A successful write immediately attempts to rebuild that item's Passages.
+
+</details>
+
+<details>
+<summary><b>Source-selection contract</b></summary>
+
+Canonical Markdown Full Text must be all of the following:
+
+- a child attachment of the Literature Item;
+- a Zotero-owned stored file, never a link or symlink;
+- named exactly `fulltext.md`;
+- titled `Markdown Full Text`;
+- tagged `zotero-cli:fulltext`;
+- non-PDF content.
+
+If canonical Markdown is absent, one PDF is selected automatically. Multiple PDFs require exactly one `zotero-cli:source` tag. PDF changes do not invalidate canonical Markdown, and `distill.md`, `probe_distill.md`, Zotero Notes, and Annotations are never promoted by inference.
+
+</details>
+
+## CLI reference
+
+| Command | Current v0.3.0 behavior |
+| --- | --- |
+| `app doctor` | Validate the local application, bridge, tools, schema, versions, and index |
+| `session create/status` | Manage independent per-agent navigation state |
+| `pwd`, `cd`, `ls` | Navigate Collection paths without using Zotero UI selection |
+| `lookup`, `source` | Inspect Literature Item metadata and preferred attachment |
+| `read`, `find` | Read bounded source lines or locate exact text; `read --all` emits complete raw text |
+| `index update/status/inspect` | Explicitly maintain and diagnose the profile-specific Passage index |
+| `search` | Search indexed Passages globally or within an explicit Collection/item scope |
+| `fulltext audit` | Produce a read-only migration plan for existing Markdown attachments |
+| `fulltext adopt` | Import a reviewed existing Markdown child attachment as canonical Full Text |
+| `fulltext migrate` | Apply only reviewed `candidate` entries from a migration plan |
+
+<details>
+<summary><b>Runtime files and concurrency</b></summary>
+
+Browsing Sessions are separate mode-`0600` JSON files written atomically under `~/.config/zotero-agent-library/sessions/`. Each session stores a stable Collection Key, so two agents can navigate different Collections without sharing a hidden working directory.
+
+Semantic updates use a cross-process lock and bounded Chroma batches. Reads and searches can run concurrently. Extension writes pass through one bounded queue, and `~/.config/zotero-agent-library/audit.jsonl` records only write time, Session ID, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
+
+</details>
+
+<details>
+<summary><b>Current boundaries</b></summary>
+
+Version 0.3.0 does not provide general ingest, metadata editing, Collection mutation, duplicate merging, OCR, DOCX citation automation, or permanent deletion. It does not package converted image assets; figure verification returns to the PDF. The implemented catalog and Full Text bridge operate on My Library; group libraries are outside the current command surface.
+
+The index is fresh and profile-specific. It neither reads nor migrates the old `zotero-mcp` Chroma database. External Zotero changes appear after the next explicit `index update`; failed extraction is reported as partial coverage rather than silently omitted.
+
+</details>
+
+## FAQ
+
+### Does Markdown replace the PDF?
+
+No. The PDF remains the Source Document and the place to verify page layout and figures. Canonical Markdown provides clean local Passage search and exact line addressing.
+
+### Does this project convert PDFs to Markdown?
+
+No. Conversion and OCR are external, converter-agnostic steps run only on explicit user intent. The current bridge adopts an existing Markdown child attachment after path, hash, source-PDF, and conflict checks.
+
+### Does paper content leave the machine?
+
+The semantic index and embedding inference are local. Chroma may download the roughly 80 MB ONNX model on first use, and Zotero may synchronize stored attachments according to the user's own sync settings; this project has no telemetry and sends no paper text to an external embedding or LLM API.
+
+## Contributing
+
+Run the smallest complete local checks before submitting a change:
 
 ```bash
-npx skills experimental_install
+(cd zotero-cli && uv sync --locked && uv run python -m unittest discover -s tests -v)
+make -C zotero-extension clean check
+uvx --from skills-ref agentskills validate skills/research-with-zotero
 ```
 
-Its installed copies under `.agents/` and `.claude/` are ignored; the lock file is tracked. Git tracks durable project knowledge—this README, `CONTEXT.md`, `docs/`, ADRs, and release metadata—but not generated audits, local Skill copies, build output, migration plans, or `.dev/` notes. Promote any lasting conclusion from a generated report into `docs/` or an ADR before committing it.
-
-For UI-free development installation or upgrade of the Extension, follow the closed-Zotero atomic XPI replacement procedure in [`zotero-extension/README.md`](zotero-extension/README.md#development-install-or-upgrade). Never edit Zotero's generated `extensions.json`.
+Keep CLI syntax in Click help, multi-command research rules in the Skill, and durable design decisions in `docs/` or an ADR. Direct SQLite writes, arbitrary Zotero JavaScript, cloud processing of paper text, and permanent deletion are outside the project contract.
 
 ## Documentation
 
 - [Domain language](CONTEXT.md)
 - [CLI shape](docs/cli.md)
-- [Extension protocol](docs/bridge.md)
-- [Ingest and reuse](docs/ingest.md)
-- [Existing Markdown migration](docs/migration.md)
 - [Semantic indexing](docs/indexing.md)
+- [Extension bridge](docs/bridge.md)
+- [Markdown migration](docs/migration.md)
 - [Architecture decisions](docs/adr/)
 
-This project is based on [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) at commit `f621952f3645546573d622440cbf707320f7a35f` under Apache-2.0. Semantic-search behavior is additionally derived from [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) 0.6.2 under MIT; see [ADR 0004](docs/adr/0004-base-the-cli-on-cli-anything-zotero.md), `zotero-cli/UPSTREAM.md`, and retained licenses.
+## License and provenance
+
+The repository is licensed under Apache-2.0. It is based on [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) at commit `f621952f3645546573d622440cbf707320f7a35f`; semantic-search behavior is also derived from [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) 0.6.2 under MIT. Modified-file provenance and retained licenses are recorded in [`zotero-cli/UPSTREAM.md`](zotero-cli/UPSTREAM.md), [`zotero-extension/UPSTREAM.md`](zotero-extension/UPSTREAM.md), and `zotero-cli/LICENSES/`.
+
+
+### Uninstall
+
+Remove **Zotero Agent Library Bridge** in Zotero's Add-ons manager and restart Zotero, then run:
+
+```bash
+uv tool uninstall zotero-cli
+rm -rf ~/.agents/skills/research-with-zotero
+rm -rf ~/.config/zotero-agent-library ~/.local/share/zotero-agent-library
+```
+
+Removing project state does not remove Literature Items, PDFs, Markdown attachments, or Zotero's database. If this installation replaced a `zotero-cli` supplied by another uv tool, reinstall that tool to restore its executable.
