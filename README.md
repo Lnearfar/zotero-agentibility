@@ -51,7 +51,8 @@ Run these commands from a local checkout of this repository:
 ```bash
 cd /path/to/zotero-paper-file-system
 sudo apt install poppler-utils make zip unzip
-uv tool install --force ./zotero-cli
+# Editable install: bare `zotero-cli` runs this checkout's source.
+uv tool install --editable --force ./zotero-cli
 make -C zotero-extension
 ```
 
