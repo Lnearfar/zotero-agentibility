@@ -9,7 +9,7 @@ from .errors import CliError
 from .http import request
 
 PROTOCOL = 1
-OPERATIONS = {"health"}
+OPERATIONS = {"health", "fulltext_adopt"}
 PATH = "/zotero-agent-library/v1/operation"
 _TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -45,27 +45,92 @@ class BridgeClient:
             {"protocol": PROTOCOL, "operation": operation, "arguments": arguments or {}},
             separators=(",", ":"),
         ).encode("utf-8")
-        response = request(
-            self.port,
-            PATH,
-            method="POST",
-            body=body,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-        )
-        if response.status != 200:
-            raise CliError("BRIDGE_HTTP_ERROR", f"Bridge returned HTTP {response.status}")
-        data = response.json()
-        protocol = data.get("protocol") if isinstance(data, dict) else None
-        if protocol != PROTOCOL:
-            raise CliError(
-                "BRIDGE_PROTOCOL_MISMATCH",
-                f"Bridge protocol {protocol!r} does not match CLI protocol {PROTOCOL}",
+        try:
+            response = request(
+                self.port,
+                PATH,
+                method="POST",
+                body=body,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                timeout=300 if operation != "health" else 3,
             )
+        except CliError as error:
+            if operation != "health" and error.code == "ZOTERO_UNAVAILABLE":
+                raise CliError(
+                    "WRITE_OUTCOME_UNKNOWN",
+                    "Connection to Zotero was lost during the write; inspect the item before retrying",
+                    details={"retryable": False},
+                ) from error
+            raise
+        try:
+            data = response.json()
+        except CliError as error:
+            if operation != "health":
+                raise CliError(
+                    "WRITE_OUTCOME_UNKNOWN",
+                    "Zotero returned an incomplete write response; inspect the item before retrying",
+                    details={"retryable": False},
+                ) from error
+            raise
+        if response.status != 200:
+            error = data.get("error") if isinstance(data, dict) else None
+            if isinstance(error, dict) and isinstance(error.get("code"), str):
+                details = error.get("details") if isinstance(error.get("details"), dict) else {}
+                if error.get("retryable") is True:
+                    details = {**details, "retryable": True}
+                raise CliError(error["code"], str(error.get("message") or "Bridge operation failed"), details=details or None)
+            if operation != "health":
+                raise CliError(
+                    "WRITE_OUTCOME_UNKNOWN",
+                    "Zotero returned an unrecognized write error; inspect the item before retrying",
+                    details={"retryable": False},
+                )
+            raise CliError("BRIDGE_HTTP_ERROR", f"Bridge returned HTTP {response.status}")
+        protocol = data.get("protocol") if isinstance(data, dict) else None
+        if protocol != PROTOCOL or not isinstance(data, dict) or data.get("ok") is not True:
+            if operation != "health":
+                raise CliError(
+                    "WRITE_OUTCOME_UNKNOWN",
+                    "Zotero returned an invalid write result; inspect the item before retrying",
+                    details={"retryable": False},
+                )
+            if protocol != PROTOCOL:
+                raise CliError(
+                    "BRIDGE_PROTOCOL_MISMATCH",
+                    f"Bridge protocol {protocol!r} does not match CLI protocol {PROTOCOL}",
+                )
+            raise CliError("INVALID_RESPONSE", "Bridge returned an invalid success envelope")
         return data
 
     def health(self) -> dict:
         return self.operation("health", {})
+
+    def fulltext_adopt(
+        self,
+        *,
+        session_id: str,
+        item_key: str,
+        attachment_key: str,
+        expected_path: str,
+        expected_sha256: str,
+        replace_attachment_keys: list[str],
+    ) -> dict:
+        response = self.operation("fulltext_adopt", {
+            "session_id": session_id,
+            "item_key": item_key,
+            "markdown_attachment_key": attachment_key,
+            "expected_path": expected_path,
+            "expected_sha256": expected_sha256,
+            "replace_attachment_keys": replace_attachment_keys,
+        })
+        if response.get("operation") != "fulltext_adopt" or not isinstance(response.get("result"), dict):
+            raise CliError(
+                "WRITE_OUTCOME_UNKNOWN",
+                "Zotero returned an invalid adoption result; inspect the item before retrying",
+                details={"retryable": False},
+            )
+        return response["result"]

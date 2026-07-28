@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
-XPI=${1:-build/zotero-agent-library-0.1.2.xpi}
+XPI=${1:-build/zotero-agent-library-0.2.0.xpi}
 
 require() {
   grep -Fq -- "$2" "$1" || {
@@ -12,7 +12,7 @@ require() {
   }
 }
 
-require manifest.json '"version": "0.1.2"'
+require manifest.json '"version": "0.2.0"'
 require manifest.json '"id": "zotero-agent-library@local"'
 require manifest.json '"update_url": "https://127.0.0.1:1/zotero-agent-library/updates.json"'
 require manifest.json '"strict_min_version": "7.0"'
@@ -20,7 +20,7 @@ require manifest.json '"strict_max_version": "9.*"'
 require bootstrap.js 'var ENDPOINT = "/zotero-agent-library/v1/operation";'
 require bootstrap.js 'var PROTOCOL = 1;'
 require bootstrap.js 'var MAX_BODY_BYTES = 4096;'
-require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health"]);'
+require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt"]);'
 require bootstrap.js 'supportedMethods: ["POST"]'
 require bootstrap.js 'supportedDataTypes: ["application/json"]'
 require bootstrap.js 'extension_version: VERSION'
@@ -31,6 +31,15 @@ require bootstrap.js 'bad_json'
 require bootstrap.js 'bad_protocol'
 require bootstrap.js 'unknown_operation'
 require bootstrap.js 'payload_too_large'
+require bootstrap.js 'Zotero.Attachments.importFromFile'
+require bootstrap.js 'Zotero.DB.executeTransaction'
+require bootstrap.js 'Zotero.Items.trash'
+require bootstrap.js 'hash.SHA256'
+require bootstrap.js 'audit.jsonl'
+if grep -Eq 'Zotero\.DB\.(queryAsync|executeSQL)|OS\.File\.(copy|move|write)|IOUtils\.write' bootstrap.js; then
+  printf 'bootstrap.js contains prohibited direct database or storage writes\n' >&2
+  exit 1
+fi
 if grep -Eq '(^|[^[:alnum:]_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\(' bootstrap.js; then
   printf 'bootstrap.js contains dynamic code execution\n' >&2
   exit 1

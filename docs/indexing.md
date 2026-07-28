@@ -1,6 +1,6 @@
 # Semantic indexing
 
-> Target design; semantic indexing is not implemented in v0.1.2.
+> Target design; semantic indexing is not implemented in v0.2.0. Full Text adoption therefore does not trigger an index update yet.
 
 ## Planned update policy
 

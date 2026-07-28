@@ -8,8 +8,8 @@ Authenticated fixed-operation bridge for `zotero-agent-library`. Installation is
 make
 ```
 
-This validates the source and creates `build/zotero-agent-library-0.1.2.xpi`. Install that XPI through Zotero's Add-ons UI and restart Zotero.
+This validates the source and creates `build/zotero-agent-library-0.2.0.xpi`. Install that XPI through Zotero's Add-ons UI and restart Zotero.
 
-On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. Protocol 1 currently allows only `health`; arbitrary JavaScript and Zotero mutations are not implemented.
+On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. Protocol 1 allows `health` and fixed `fulltext_adopt`; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agent-library/audit.jsonl`.
 
-The static check passes on Linux. Zotero runtime compatibility of the server hooks and Gecko token-file APIs must be confirmed by installing the XPI and running `zotero-cli --json app doctor`.
+Run `zotero-cli --json app doctor` after installing each matching release.

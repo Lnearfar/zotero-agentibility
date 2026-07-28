@@ -7,6 +7,7 @@ and authenticated fixed bridge operations; connector writes were removed.
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -55,7 +56,7 @@ def request(
             return Response(response.getcode(), response.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as exc:
         return Response(exc.code, exc.read().decode("utf-8", "replace"))
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, http.client.IncompleteRead, TimeoutError, OSError) as exc:
         raise CliError("ZOTERO_UNAVAILABLE", f"Cannot reach Zotero on 127.0.0.1:{port}") from exc
 
 

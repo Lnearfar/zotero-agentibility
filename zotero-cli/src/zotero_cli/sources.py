@@ -22,6 +22,7 @@ from .poppler import extract_pdf
 
 FULLTEXT_TAG = "zotero-cli:fulltext"
 SOURCE_TAG = "zotero-cli:source"
+_KEY = re.compile(r"^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$")
 
 
 def resolve_attachment_path(attachment: dict, data_dir: Path) -> Path | None:
@@ -206,6 +207,109 @@ def _normalized_name(value: str) -> str:
     return "".join(character for character in value.casefold() if character.isalnum())
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def adoption_snapshot(
+    db: Database,
+    item_key: str,
+    attachment_key: str,
+    data_dir: Path,
+    replace_attachment_keys: tuple[str, ...] | list[str] = (),
+) -> dict:
+    if not _KEY.fullmatch(item_key) or not _KEY.fullmatch(attachment_key):
+        raise CliError("INVALID_ITEM_KEY", "Item and attachment keys must be valid Zotero keys")
+    db.lookup(item_key)
+    attachments = db.attachments(item_key)
+    selected = next((item for item in attachments if item["key"] == attachment_key), None)
+    if not selected:
+        raise CliError("ATTACHMENT_NOT_FOUND", f"Attachment is not a child of {item_key}: {attachment_key}")
+    path = resolve_attachment_path(selected, data_dir)
+    filename = path.name if path else Path(str(selected.get("attachmentPath") or "")).name
+    content_type = str(selected.get("contentType") or "").lower()
+    if content_type == "application/pdf" or not (
+        filename.lower().endswith(".md") or content_type in {"text/markdown", "text/x-markdown"}
+    ):
+        raise CliError("INVALID_FULLTEXT_SOURCE", "Selected attachment is not Markdown")
+    if filename.lower() in {"distill.md", "probe_distill.md"}:
+        raise CliError("INVALID_FULLTEXT_SOURCE", "Derived distillation cannot become Markdown Full Text")
+    if not path or not path.is_file() or path.is_symlink():
+        raise CliError("ATTACHMENT_FILE_MISSING", f"Markdown attachment file is missing or unsafe: {attachment_key}")
+    path = path.expanduser().resolve()
+    if len(str(path)) > 2048:
+        raise CliError("INVALID_FULLTEXT_SOURCE", "Markdown attachment path is too long")
+
+    replacements = list(replace_attachment_keys)
+    if len(replacements) > 32 or len(set(replacements)) != len(replacements) or any(not _KEY.fullmatch(key) for key in replacements):
+        raise CliError("INVALID_REPLACEMENTS", "Replacement keys must be at most 32 unique Zotero attachment keys")
+    marked = sorted(
+        item["key"] for item in attachments
+        if FULLTEXT_TAG in item.get("tags", []) and item["key"] != attachment_key
+    )
+    if sorted(replacements) != marked:
+        raise CliError(
+            "FULLTEXT_CONFLICT",
+            "Explicit replacement keys do not match marked Full Text attachments",
+            details={"requiredAttachmentKeys": marked},
+        )
+    return {
+        "itemKey": item_key,
+        "attachmentKey": attachment_key,
+        "expectedPath": str(path),
+        "expectedSha256": _sha256_file(path),
+        "replaceAttachmentKeys": replacements,
+    }
+
+
+def load_migration_candidates(path: Path, db: Database, data_dir: Path) -> tuple[Path, list[dict]]:
+    plan_path = path.expanduser().resolve()
+    try:
+        if plan_path.stat().st_size > 50 * 1024 * 1024:
+            raise CliError("INVALID_MIGRATION_PLAN", "Migration plan exceeds 50 MiB")
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise CliError("MIGRATION_PLAN_NOT_FOUND", f"Migration plan not found: {plan_path}") from exc
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CliError("INVALID_MIGRATION_PLAN", f"Migration plan is unreadable: {plan_path}") from exc
+    if not isinstance(plan, dict) or plan.get("protocol") != 1 or not isinstance(plan.get("entries"), list):
+        raise CliError("INVALID_MIGRATION_PLAN", "Migration plan must contain protocol 1 entries")
+
+    selected = [entry for entry in plan["entries"] if isinstance(entry, dict) and entry.get("candidateClass") == "candidate"]
+    parent_keys = [entry.get("parentItemKey") for entry in selected]
+    if any(not isinstance(key, str) for key in parent_keys):
+        raise CliError("INVALID_MIGRATION_PLAN", "Selected migration entry has an invalid parent Item Key")
+    if len(parent_keys) != len(set(parent_keys)):
+        raise CliError("INVALID_MIGRATION_PLAN", "Migration plan selects multiple candidates for one Literature Item")
+
+    candidates = []
+    for entry in selected:
+        item_key = entry.get("parentItemKey")
+        attachment_key = entry.get("attachmentKey")
+        expected_path = entry.get("path")
+        expected_sha256 = entry.get("sha256")
+        replacements = entry.get("replaceAttachmentKeys", [])
+        if not isinstance(item_key, str) or not isinstance(attachment_key, str) \
+                or not isinstance(expected_path, str) or not Path(expected_path).is_absolute() \
+                or not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256) \
+                or not isinstance(replacements, list) or any(not isinstance(key, str) for key in replacements):
+            raise CliError("INVALID_MIGRATION_PLAN", "Selected migration entry has invalid keys, path, hash, or replacements")
+        snapshot = adoption_snapshot(db, item_key, attachment_key, data_dir, replacements)
+        if snapshot["expectedPath"] != str(Path(expected_path).expanduser().resolve()) \
+                or snapshot["expectedSha256"] != expected_sha256:
+            raise CliError(
+                "STALE_MIGRATION_PLAN",
+                "Selected Markdown attachment changed after the migration plan was reviewed",
+                details={"itemKey": item_key, "attachmentKey": attachment_key},
+            )
+        candidates.append(snapshot)
+    return plan_path, candidates
+
+
 def _title_like(filename: str, title: str) -> bool:
     title_name = _normalized_name(title)
     stem = Path(filename).stem
@@ -286,7 +390,7 @@ def fulltext_manifest(db: Database, data_dir: Path) -> dict:
                 candidate_class, reason = "unresolved", "not a deterministic source.md or title-like candidate"
             digest = None
             if exists:
-                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                digest = _sha256_file(path)
             entry = {
                 "parentItemKey": item_key,
                 "parentTitle": parent_title,
@@ -299,6 +403,7 @@ def fulltext_manifest(db: Database, data_dir: Path) -> dict:
                 "attachmentTitle": attachment.get("title"),
                 "sha256": digest,
                 "markedFullText": marked_fulltext,
+                "replaceAttachmentKeys": [],
                 "candidateClass": candidate_class,
                 "reason": reason,
             }

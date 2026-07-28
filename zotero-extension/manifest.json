@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotero Agent Library Bridge",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-agent-library",
   "applications": {
     "zotero": {

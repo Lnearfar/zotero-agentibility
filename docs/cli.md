@@ -1,6 +1,6 @@
 # CLI shape
 
-This document defines the target interface. The implemented v0.1.2 read-only slice currently provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, and `fulltext audit`; later commands below are not yet available. The installed command reference is `zotero-cli --help`, with `zotero-cli COMMAND --help` or nested group help for arguments and options.
+This document defines the target interface. Version 0.2.0 provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `fulltext audit`, `fulltext adopt`, and `fulltext migrate`; later commands below are not yet available. The installed command reference is `zotero-cli --help`, with `zotero-cli COMMAND --help` or nested group help for arguments and options.
 
 The primary agent workflow uses top-level filesystem-style commands:
 

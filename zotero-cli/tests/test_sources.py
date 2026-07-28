@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from zotero_cli.errors import CliError
-from zotero_cli.sources import fulltext_manifest, lexical_find, preferred_source, segment_markdown
+from zotero_cli.sources import (
+    adoption_snapshot,
+    fulltext_manifest,
+    lexical_find,
+    load_migration_candidates,
+    preferred_source,
+    segment_markdown,
+)
 
 
 def attachment(
@@ -206,6 +214,54 @@ class PreferredSourceTests(unittest.TestCase):
             )
         self.assertEqual(result["matches"][0]["line"], 3)
         self.assertEqual(result["matches"][0]["location"], "lines 3-3 (PDF page 2)")
+
+    def test_adoption_snapshot_requires_explicit_marked_replacements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.md"
+            old = root / "fulltext.md"
+            source.write_text("paper", encoding="utf-8")
+            old.write_text("old", encoding="utf-8")
+            db = FakeDatabase({
+                "ABCD2345": [
+                    attachment("EFGH6789", str(source), content_type="text/plain"),
+                    attachment("JKLM2345", str(old), tags=("zotero-cli:fulltext",), content_type="text/plain"),
+                ]
+            })
+            with self.assertRaises(CliError) as caught:
+                adoption_snapshot(db, "ABCD2345", "EFGH6789", root)
+            self.assertEqual(caught.exception.code, "FULLTEXT_CONFLICT")
+            snapshot = adoption_snapshot(db, "ABCD2345", "EFGH6789", root, ["JKLM2345"])
+        self.assertEqual(snapshot["replaceAttachmentKeys"], ["JKLM2345"])
+        self.assertEqual(len(snapshot["expectedSha256"]), 64)
+
+    def test_migration_plan_revalidates_selected_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.md"
+            source.write_text("paper", encoding="utf-8")
+            db = FakeDatabase({
+                "ABCD2345": [attachment("EFGH6789", str(source), content_type="text/plain")]
+            })
+            snapshot = adoption_snapshot(db, "ABCD2345", "EFGH6789", root)
+            plan = root / "plan.json"
+            plan.write_text(json.dumps({
+                "protocol": 1,
+                "entries": [{
+                    "parentItemKey": "ABCD2345",
+                    "attachmentKey": "EFGH6789",
+                    "path": snapshot["expectedPath"],
+                    "sha256": snapshot["expectedSha256"],
+                    "candidateClass": "candidate",
+                }],
+            }), encoding="utf-8")
+            resolved, candidates = load_migration_candidates(plan, db, root)
+            self.assertEqual(resolved, plan.resolve())
+            self.assertEqual(candidates, [snapshot])
+            source.write_text("changed", encoding="utf-8")
+            with self.assertRaises(CliError) as caught:
+                load_migration_candidates(plan, db, root)
+        self.assertEqual(caught.exception.code, "STALE_MIGRATION_PLAN")
 
     def test_tagged_source_disambiguates_pdfs(self):
         selected = preferred_source(

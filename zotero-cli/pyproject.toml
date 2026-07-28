@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zotero-cli"
-version = "0.1.2"
+version = "0.2.0"
 description = "Read-only Linux CLI for a local Zotero library"
 readme = "README.md"
 requires-python = ">=3.10"

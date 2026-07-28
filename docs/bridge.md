@@ -18,4 +18,12 @@ Requests use a fixed-operation envelope:
 {"protocol":1,"operation":"health","arguments":{}}
 ```
 
-The first runnable slice allows only `health`; it returns the protocol and Extension release version. Missing or invalid authentication, malformed or oversized JSON, protocol mismatch, and unknown operations fail without evaluation. The bridge never accepts JavaScript source. Later write operations must be individually allowlisted, validate My Library and current Zotero state, and use Zotero transactions.
+Version 0.2.0 allows `health` and one write operation, `fulltext_adopt`. The write request contains only a Session ID, parent and attachment keys, reviewed absolute path and SHA-256, and explicitly selected replacement attachment keys:
+
+```json
+{"protocol":1,"operation":"fulltext_adopt","arguments":{"session_id":"agent-1","item_key":"ABCD2345","markdown_attachment_key":"EFGH6789","expected_path":"/home/user/Zotero/storage/EFGH6789/source.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
+```
+
+The expected path is a stale-plan guard, not an arbitrary import source: the Extension resolves the live attachment path through Zotero and requires an exact match. It limits writes to active regular items in My Library, revalidates the source hash, imports through `Zotero.Attachments.importFromFile`, validates the copied `fulltext.md`, then tags the new attachment and moves selected old attachments to Zotero Trash in a final transaction. A five-second bounded global lock serializes bridge writes.
+
+Every schema-valid operation that acquires the write lock is recorded without content, paths, hashes, queries, or tokens in mode-`0600` `~/.config/zotero-agent-library/audit.jsonl`; malformed requests and queue rejections make no Zotero change and are not write-log records. Missing or invalid authentication, malformed or oversized JSON, protocol mismatch, stale state, conflicts, and unknown operations fail with structured errors and no evaluation. The bridge never accepts JavaScript source or generic mutation requests.

@@ -1,6 +1,6 @@
 # Mutations
 
-Version 0.1.2 has no write commands. Explain that boundary and stop; the rules below constrain the later write-capable release and must never be simulated through SQLite or arbitrary JavaScript.
+Version 0.2.0 writes only through `fulltext adopt` and `fulltext migrate`. For additions, metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
 
 ## Rules
 
@@ -14,9 +14,9 @@ Version 0.1.2 has no write commands. Explain that boundary and stop; the rules b
 
 ## Full text
 
-PDF-to-Markdown conversion is external to this project and runs only on explicit user intent. Give the external converter the selected PDF; do not require a particular converter. Import its resulting Markdown unchanged with the relevant `fulltext set`, `fulltext replace`, or `fulltext adopt` command.
+PDF-to-Markdown conversion is external to this project and runs only on explicit user intent. Version 0.2.0 can adopt an existing Zotero Markdown child attachment; it cannot attach an arbitrary converter output. If the output is not already attached, explain that boundary rather than bypassing Zotero.
 
-Before replacement, identify the existing Markdown attachment. If several attachments are marked Full Text, stop and require an explicit attachment key. Preserve `distill.md` and all unrelated Markdown. Converted image assets are not imported; inspect the PDF when figures matter.
+Before adoption, identify the selected Markdown attachment and run the command without `--confirm` only to inspect help—not as a dry run. If marked Full Text attachments already exist, supply every reported key explicitly with repeatable `--replace KEY`; then require the user's confirmation before adding `--confirm`. Preserve `distill.md`, `probe_distill.md`, and unrelated Markdown. Converted image assets are not imported; inspect the PDF when figures matter.
 
 ## Duplicates
 

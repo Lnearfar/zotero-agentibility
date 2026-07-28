@@ -2,7 +2,7 @@
 
 Linux-first tools that let people and agents work from the same Zotero-managed literature and Full Text.
 
-> **Status:** v0.1.2 is a runnable read-only slice. It supports Zotero navigation, metadata lookup, Markdown-first/PDF-fallback reading, lexical finding, and read-only Markdown migration audits. Semantic indexing and every Zotero mutation remain unimplemented until the authenticated Extension is live-validated.
+> **Status:** v0.2.0 supports Zotero navigation, metadata lookup, Markdown-first/PDF-fallback reading, lexical finding, migration audits, and explicitly confirmed Markdown Full Text adoption. Semantic indexing and broader Zotero management remain unimplemented.
 
 ## Components
 
@@ -22,7 +22,7 @@ The project follows the Ponytail principle: the shortest reliable path wins.
 - Python standard library plus Click, using Zotero's existing Local API, immutable SQLite catalog, and system Poppler instead of new service layers.
 - Markdown-first reading with PDF fallback and line/page provenance.
 - Explicit per-agent sessions; no hidden global working Collection.
-- Local, read-only behavior in v0.1.2; no telemetry, cloud LLM, implicit conversion, or Zotero mutation.
+- Local-first behavior; v0.2.0 writes only explicitly confirmed Markdown Full Text adoptions through the authenticated Extension.
 - Three independently replaceable components rather than cross-installing components.
 
 ## Requirements
@@ -71,10 +71,10 @@ make -C zotero-extension
 In Zotero, open **Tools → Add-ons**, choose **Install Add-on From File**, select:
 
 ```text
-zotero-extension/build/zotero-agent-library-0.1.2.xpi
+zotero-extension/build/zotero-agent-library-0.2.0.xpi
 ```
 
-Restart Zotero. On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. The current Extension exposes authenticated `health` only; it cannot mutate Zotero.
+Restart Zotero. On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. The Extension exposes authenticated `health` and fixed `fulltext_adopt`; it has no generic mutation or JavaScript endpoint.
 
 ### 3. Agent Skill
 
@@ -140,9 +140,11 @@ zotero-cli --session "$session" --json source ITEM_KEY
 zotero-cli --session "$session" --json read ITEM_KEY --start 1 --limit 200
 zotero-cli --session "$session" --json find ITEM_KEY "exact phrase" --context 8
 zotero-cli --session "$session" --json fulltext audit --output migration-plan.json
+# After reviewing every candidate in the plan:
+zotero-cli --session "$session" --json fulltext migrate migration-plan.json --confirm
 ```
 
-`read --all` emits untruncated raw text. Ordinary navigation and reading are local and side-effect-free. The current release has no `search`, `index`, `fulltext migrate`, ingest, merge, or write commands.
+`read --all` emits untruncated raw text. Ordinary navigation and reading are local and side-effect-free. Full Text adoption requires `--confirm`; the current release still has no semantic `search`, `index`, ingest, merge, or general-purpose write commands.
 
 ## Safety and privacy
 
@@ -151,7 +153,7 @@ zotero-cli --session "$session" --json fulltext audit --output migration-plan.js
 - Tagged canonical `fulltext.md` wins over PDF and remains canonical until explicitly replaced in a future write-capable release.
 - The Extension never accepts JavaScript source.
 - There is no telemetry and no paper Full Text is sent to an external service.
-- Future writes are limited to My Library and Zotero Trash; group libraries remain read-only.
+- Full Text writes are limited to My Library, replace old attachments through Zotero Trash, and are recorded in `~/.config/zotero-agent-library/audit.jsonl`; group libraries remain read-only.
 
 ## Development documentation
 

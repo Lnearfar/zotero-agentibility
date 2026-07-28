@@ -91,7 +91,7 @@ class RootGroup(click.Group):
 @click.version_option(__version__, prog_name="zotero-cli")
 @click.pass_context
 def cli(ctx: click.Context, session_id: str | None, json_output: bool) -> None:
-    """Read-only Zotero library navigation and grounded text retrieval."""
+    """Local Zotero navigation, grounded reading, and confirmed Full Text adoption."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = build_config(session_id, json_output)
 
@@ -301,7 +301,7 @@ def find_command(ctx: click.Context, item_key: str, query: str, context: int, li
 
 @cli.group("fulltext")
 def fulltext_group() -> None:
-    """Inspect existing Markdown attachments without mutation."""
+    """Audit and safely adopt canonical Markdown Full Text."""
 
 
 @fulltext_group.command("audit", help="Create a read-only Markdown migration plan.")
@@ -315,6 +315,135 @@ def fulltext_audit(ctx: click.Context, output: Path | None) -> None:
         emit(ctx, {"output": str(output.expanduser().resolve()), "summary": manifest["summary"]})
     else:
         emit(ctx, manifest)
+
+
+@fulltext_group.command("adopt", help="Copy one Markdown attachment into canonical Full Text.")
+@click.argument("item_key")
+@click.argument("markdown_attachment_key")
+@click.option("--replace", "replace_keys", multiple=True, help="Explicit marked Full Text attachment to replace.")
+@click.option("--confirm", is_flag=True, help="Confirm the recoverable Zotero mutation.")
+@click.pass_context
+def fulltext_adopt(
+    ctx: click.Context,
+    item_key: str,
+    markdown_attachment_key: str,
+    replace_keys: tuple[str, ...],
+    confirm: bool,
+) -> None:
+    if not confirm:
+        raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to adopt Markdown Full Text")
+    state = _session(ctx)
+    config = _config(ctx)
+    snapshot = sources.adoption_snapshot(
+        _database(ctx), item_key, markdown_attachment_key, config.data_dir, replace_keys
+    )
+    try:
+        result = BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_adopt(
+            session_id=state["id"],
+            item_key=snapshot["itemKey"],
+            attachment_key=snapshot["attachmentKey"],
+            expected_path=snapshot["expectedPath"],
+            expected_sha256=snapshot["expectedSha256"],
+            replace_attachment_keys=snapshot["replaceAttachmentKeys"],
+        )
+    except CliError as error:
+        if error.code != "AUDIT_LOG_FAILED_AFTER_WRITE":
+            raise
+        details = error.details or {}
+        emit(ctx, {
+            "itemKey": item_key,
+            "status": "committed_with_warning",
+            "errorCode": error.code,
+            "markdownAttachmentKey": details.get("markdown_attachment_key"),
+            "trashedAttachmentKeys": details.get("trashed_attachment_keys", []),
+        }, ok=False, code=error.code)
+        ctx.exit(1)
+    emit(ctx, result)
+
+
+@fulltext_group.command("migrate", help="Apply reviewed candidate entries from a migration plan.")
+@click.argument("plan", type=click.Path(path_type=Path))
+@click.option("--confirm", is_flag=True, help="Confirm all selected recoverable Zotero mutations.")
+@click.pass_context
+def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
+    if not confirm:
+        raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to apply a reviewed migration plan")
+    state = _session(ctx)
+    config = _config(ctx)
+    plan_path, candidates = sources.load_migration_candidates(plan, _database(ctx), config.data_dir)
+    bridge = BridgeClient(config.port, config.config_dir / "bridge-token")
+    results = []
+    succeeded = failed = warnings = unknown = rollback_failed = 0
+    for candidate in candidates:
+        try:
+            result = bridge.fulltext_adopt(
+                session_id=state["id"],
+                item_key=candidate["itemKey"],
+                attachment_key=candidate["attachmentKey"],
+                expected_path=candidate["expectedPath"],
+                expected_sha256=candidate["expectedSha256"],
+                replace_attachment_keys=candidate["replaceAttachmentKeys"],
+            )
+            succeeded += 1
+            results.append({
+                "itemKey": candidate["itemKey"],
+                "status": "success",
+                "markdownAttachmentKey": result.get("markdown_attachment_key"),
+            })
+        except CliError as error:
+            if error.code == "AUDIT_LOG_FAILED_AFTER_WRITE":
+                succeeded += 1
+                warnings += 1
+                results.append({
+                    "itemKey": candidate["itemKey"],
+                    "status": "committed_with_warning",
+                    "errorCode": error.code,
+                    "markdownAttachmentKey": (error.details or {}).get("markdown_attachment_key"),
+                })
+                continue
+            if error.code == "WRITE_OUTCOME_UNKNOWN":
+                unknown += 1
+                results.append({
+                    "itemKey": candidate["itemKey"],
+                    "status": "outcome_unknown",
+                    "errorCode": error.code,
+                    "message": error.message,
+                })
+                break
+            if error.code == "ROLLBACK_FAILED":
+                failed += 1
+                rollback_failed += 1
+                results.append({
+                    "itemKey": candidate["itemKey"],
+                    "status": "rollback_failed",
+                    "errorCode": error.code,
+                    "orphanAttachmentKey": (error.details or {}).get("attachment_key"),
+                })
+                break
+            failed += 1
+            results.append({
+                "itemKey": candidate["itemKey"],
+                "status": "failed",
+                "errorCode": error.code,
+                "message": error.message,
+            })
+    skipped = len(candidates) - len(results)
+    summary = {
+        "plan": str(plan_path),
+        "attempted": len(results),
+        "succeeded": succeeded,
+        "failed": failed,
+        "warnings": warnings,
+        "outcomeUnknown": unknown,
+        "rollbackFailed": rollback_failed,
+        "skipped": skipped,
+        "results": results,
+    }
+    ok = failed == 0 and warnings == 0 and unknown == 0
+    code = "OK" if ok else "OUTCOME_UNKNOWN" if unknown else "ROLLBACK_FAILED" if rollback_failed else "PARTIAL_FAILURE" if failed else "COMMITTED_WITH_WARNING"
+    emit(ctx, summary, ok=ok, code=code)
+    if not ok:
+        ctx.exit(1)
 
 
 def main(argv: list[str] | None = None) -> int:
