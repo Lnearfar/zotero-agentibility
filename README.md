@@ -2,7 +2,7 @@
 
 Linux-first tools that let people and agents work from the same Zotero-managed literature and Full Text.
 
-> **Status:** v0.1.1 is a runnable read-only slice. It supports Zotero navigation, metadata lookup, Markdown-first/PDF-fallback reading, lexical finding, and read-only Markdown migration audits. Semantic indexing and every Zotero mutation remain unimplemented until the authenticated Extension is live-validated.
+> **Status:** v0.1.2 is a runnable read-only slice. It supports Zotero navigation, metadata lookup, Markdown-first/PDF-fallback reading, lexical finding, and read-only Markdown migration audits. Semantic indexing and every Zotero mutation remain unimplemented until the authenticated Extension is live-validated.
 
 ## Components
 
@@ -22,7 +22,7 @@ The project follows the Ponytail principle: the shortest reliable path wins.
 - Python standard library plus Click, using Zotero's existing Local API, immutable SQLite catalog, and system Poppler instead of new service layers.
 - Markdown-first reading with PDF fallback and line/page provenance.
 - Explicit per-agent sessions; no hidden global working Collection.
-- Local, read-only behavior in v0.1.1; no telemetry, cloud LLM, implicit conversion, or Zotero mutation.
+- Local, read-only behavior in v0.1.2; no telemetry, cloud LLM, implicit conversion, or Zotero mutation.
 - Three independently replaceable components rather than cross-installing components.
 
 ## Requirements
@@ -71,7 +71,7 @@ make -C zotero-extension
 In Zotero, open **Tools → Add-ons**, choose **Install Add-on From File**, select:
 
 ```text
-zotero-extension/build/zotero-agent-library-0.1.1.xpi
+zotero-extension/build/zotero-agent-library-0.1.2.xpi
 ```
 
 Restart Zotero. On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. The current Extension exposes authenticated `health` only; it cannot mutate Zotero.

@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
-XPI=${1:-build/zotero-agent-library-0.1.1.xpi}
+XPI=${1:-build/zotero-agent-library-0.1.2.xpi}
 
 require() {
   grep -Fq -- "$2" "$1" || {
@@ -12,15 +12,11 @@ require() {
   }
 }
 
-require manifest.json '"version": "0.1.1"'
+require manifest.json '"version": "0.1.2"'
 require manifest.json '"id": "zotero-agent-library@local"'
+require manifest.json '"update_url": "https://127.0.0.1:1/zotero-agent-library/updates.json"'
 require manifest.json '"strict_min_version": "7.0"'
 require manifest.json '"strict_max_version": "9.*"'
-if grep -Fqi 'update_url' manifest.json; then
-  printf 'manifest.json must not contain an update URL\n' >&2
-  exit 1
-fi
-
 require bootstrap.js 'var ENDPOINT = "/zotero-agent-library/v1/operation";'
 require bootstrap.js 'var PROTOCOL = 1;'
 require bootstrap.js 'var MAX_BODY_BYTES = 4096;'

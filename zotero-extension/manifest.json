@@ -1,11 +1,12 @@
 {
   "manifest_version": 2,
   "name": "Zotero Agent Library Bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-agent-library",
   "applications": {
     "zotero": {
       "id": "zotero-agent-library@local",
+      "update_url": "https://127.0.0.1:1/zotero-agent-library/updates.json",
       "strict_min_version": "7.0",
       "strict_max_version": "9.*"
     }

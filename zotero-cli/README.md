@@ -17,7 +17,7 @@ Set `ZOTERO_DATA_DIR` when Zotero data is not under `~/Zotero`, `ZOTERO_HTTP_POR
 
 `zotero-cli --help` lists every installed command with a short description. Use `zotero-cli COMMAND --help` or `zotero-cli GROUP COMMAND --help` for arguments and options.
 
-Version 0.1.1 provides:
+Version 0.1.2 provides:
 
 ```text
 session create/status

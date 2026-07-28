@@ -1,6 +1,6 @@
 # Semantic indexing
 
-> Target design; semantic indexing is not implemented in v0.1.1.
+> Target design; semantic indexing is not implemented in v0.1.2.
 
 ## Planned update policy
 
