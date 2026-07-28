@@ -171,6 +171,8 @@ npx skills experimental_install
 
 Its installed copies under `.agents/` and `.claude/` are ignored; the lock file is tracked. Git tracks durable project knowledge—this README, `CONTEXT.md`, `docs/`, ADRs, and release metadata—but not generated audits, local Skill copies, build output, migration plans, or `.dev/` notes. Promote any lasting conclusion from a generated report into `docs/` or an ADR before committing it.
 
+For UI-free development installation or upgrade of the Extension, follow the closed-Zotero atomic XPI replacement procedure in [`zotero-extension/README.md`](zotero-extension/README.md#development-install-or-upgrade). Never edit Zotero's generated `extensions.json`.
+
 ## Documentation
 
 - [Domain language](CONTEXT.md)
