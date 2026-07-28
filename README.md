@@ -73,7 +73,7 @@ zotero-cli --json app doctor
 ### Option 2: Ask your Agent to install it
 
 ```text
-Install this repository for me.
+Install https://github.com/Lnearfar/zotero-paper-agent for me.
 ```
 
 `doctor` checks Zotero, its Local API, the matching Extension and protocol, token permissions, Poppler, the database schema, and semantic-index readability.
