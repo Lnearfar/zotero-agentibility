@@ -21,7 +21,7 @@ class FakeResponse:
         return 200
 
     def read(self):
-        return b'{"ok":true,"protocol":1,"extension_version":"0.1.0"}'
+        return b'{"ok":true,"protocol":1,"extension_version":"0.1.1"}'
 
 
 class BridgeTests(unittest.TestCase):

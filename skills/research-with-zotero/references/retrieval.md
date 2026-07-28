@@ -4,7 +4,7 @@ Find candidate Literature Items, read bounded source Passages, and return ground
 
 ## Workflow
 
-1. Obtain a stable Item Key from the user or by navigating known Collections with `ls`. Version 0.1.0 has no library-wide semantic search; report that limitation rather than scanning the entire Library.
+1. Obtain a stable Item Key from the user or by navigating known Collections with `ls`. Version 0.1.1 has no library-wide semantic search; report that limitation rather than scanning the entire Library.
 2. Inspect candidate metadata with `lookup ITEM_KEY`. Do not select a paper from title similarity alone when identity matters.
 3. Read every Passage needed for the answer:
 

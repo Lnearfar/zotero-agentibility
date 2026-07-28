@@ -1,6 +1,6 @@
 # Mutations
 
-Version 0.1.0 has no write commands. Explain that boundary and stop; the rules below constrain the later write-capable release and must never be simulated through SQLite or arbitrary JavaScript.
+Version 0.1.1 has no write commands. Explain that boundary and stop; the rules below constrain the later write-capable release and must never be simulated through SQLite or arbitrary JavaScript.
 
 ## Rules
 

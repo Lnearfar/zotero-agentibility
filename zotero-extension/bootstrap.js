@@ -1,5 +1,5 @@
 /*
- * Zotero Agent Library bridge, version 0.1.0.
+ * Zotero Agent Library bridge, version 0.1.1.
  *
  * Derived from cli-anything-zotero's zotero-cli-bridge/bootstrap.js and
  * substantially modified: arbitrary JavaScript execution was removed and
@@ -9,7 +9,7 @@
 
 var ENDPOINT = "/zotero-agent-library/v1/operation";
 var PROTOCOL = 1;
-var VERSION = "0.1.0";
+var VERSION = "0.1.1";
 var MAX_BODY_BYTES = 4096;
 var ALLOWED_OPERATIONS = Object.freeze(["health"]);
 var bearerToken = null;
