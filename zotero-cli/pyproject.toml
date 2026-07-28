@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zotero-cli"
+version = "0.1.0"
+description = "Read-only Linux CLI for a local Zotero library"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ["click>=8.1,<9"]
+
+[project.scripts]
+zotero-cli = "zotero_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["zotero_cli*"]
