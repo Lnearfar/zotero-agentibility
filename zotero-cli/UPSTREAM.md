@@ -4,11 +4,14 @@ This component is based on inspection of [`PiaoyangGuohai1/cli-anything-zotero`]
 
 Safe relevant behavior was reimplemented: Linux Zotero path discovery, immutable read-only SQLite access, Local API probing, attachment path resolution, compact agent results, and locked session persistence. Confirmed Full Text writes use this project's separate fixed-operation authenticated Extension rather than upstream's eval bridge. The implementation is materially rewritten under the `zotero_cli` namespace and removes direct SQLite writes, arbitrary JavaScript, cloud LLMs, DOCX automation, REPL support, and installers.
 
+The semantic-search behavior, natural-boundary passage splitting, lexical matched snippet, Chroma grouping, and local update lifecycle were also derived from the locally installed [`54yyyu/zotero-mcp`](https://github.com/54yyyu/zotero-mcp) 0.6.2 under the MIT License, then rewritten for canonical-Markdown-first source selection, complete uncapped indexing, exact source provenance, and an ONNX-only local runtime. Its license is retained at `LICENSES/zotero-mcp-MIT.txt`.
+
 Files carrying a source-level derivation notice:
 
 - `src/zotero_cli/db.py`
 - `src/zotero_cli/http.py`
 - `src/zotero_cli/sessions.py`
 - `src/zotero_cli/sources.py`
+- `src/zotero_cli/semantic.py`
 
 The upstream Apache-2.0 `LICENSE` is included unchanged. No upstream NOTICE file existed at the pinned commit.

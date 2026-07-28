@@ -27,11 +27,11 @@ Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it wit
 
 CLI help owns installed command names, arguments, and options. This Skill owns the multi-command workflows, source-verification rules, and safety invariants below because command help cannot express them.
 
-Version 0.2.0 permits only explicitly confirmed `fulltext adopt` and reviewed `fulltext migrate` writes. Semantic search, indexing, ingest, merge, metadata/Collection changes, and all other mutations are unavailable; report that boundary instead of inventing a command.
+Version 0.3.0 provides local semantic `search` and explicit `index` management. The only Zotero writes remain explicitly confirmed `fulltext adopt` and reviewed `fulltext migrate`; ingest, merge, metadata/Collection changes, and all other mutations are unavailable.
 
 ## Route
 
-- For reading a known Item Key, quotation, or source verification, read and follow [references/retrieval.md](references/retrieval.md). Library-wide semantic discovery is not available in v0.2.0.
+- For semantic discovery, reading a known Item Key, quotation, or source verification, read and follow [references/retrieval.md](references/retrieval.md).
 - For navigation only, use `pwd`, `cd`, and `ls`; Collection paths navigate, while Item Keys identify Literature Items. If a path is ambiguous, use the reported Collection Key with `cd --collection`.
 - For additions, metadata changes, Collection Membership, full-text changes, duplicate handling, or removal, read and follow [references/mutations.md](references/mutations.md).
 - For adopting existing `source.md` or paper-named Markdown attachments in bulk, read and follow [references/migration.md](references/migration.md).

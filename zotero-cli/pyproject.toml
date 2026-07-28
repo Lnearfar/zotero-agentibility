@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zotero-cli"
-version = "0.2.0"
-description = "Read-only Linux CLI for a local Zotero library"
+version = "0.3.0"
+description = "Local-first Linux CLI for a Zotero research library"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
-dependencies = ["click>=8.1,<9"]
+license-files = ["LICENSE", "LICENSES/*"]
+dependencies = [
+    "chromadb>=1.5,<2",
+    "click>=8.1,<9",
+]
 
 [project.scripts]
 zotero-cli = "zotero_cli.cli:main"

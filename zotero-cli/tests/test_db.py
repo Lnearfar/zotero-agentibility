@@ -78,6 +78,18 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(item["creators"], ["Ada Lovelace"])
         self.assertEqual(self.db.attachments("ITEMONE1")[0]["tags"], ["source"])
 
+    def test_collection_scope_includes_descendants(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("INSERT INTO collectionItems VALUES(2,2)")
+        self.assertEqual(self.db.literature_keys("ROOTCOL1"), ["ITEMONE1", "ITEMTWO2"])
+        self.assertEqual(self.db.literature_keys("CHILDCOL"), ["ITEMTWO2"])
+
+    def test_recursive_scope_terminates_on_corrupt_cycle(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("UPDATE collections SET parentCollectionID=2 WHERE collectionID=1")
+            conn.execute("INSERT INTO collectionItems VALUES(2,2)")
+        self.assertEqual(self.db.literature_keys("ROOTCOL1"), ["ITEMONE1", "ITEMTWO2"])
+
     def test_deleted_collection_is_hidden(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("INSERT INTO deletedCollections VALUES(1)")

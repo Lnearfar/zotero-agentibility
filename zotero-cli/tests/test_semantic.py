@@ -100,6 +100,8 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(report["indexed"], 1)
         self.assertGreater(len(self.collection.rows), 120)
         self.assertIn("ABCD1234#120", self.collection.rows)
+        embedded = [text for batch in self.embedding.calls for text in batch]
+        self.assertNotEqual(embedded[0], embedded[1])
 
     def test_line_and_pdf_page_provenance(self):
         self.source.write_text("one\ntwo\nthree\n", encoding="utf-8")
@@ -145,10 +147,12 @@ class SemanticTests(unittest.TestCase):
         self.db.items["EFGH5678"] = {"title": "B", "typeName": "book", "fields": {}, "creators": [], "tags": []}
         self.source.write_text("second item", encoding="utf-8")
         self.update(item_keys=["EFGH5678"])
-        global_hits = self.index.search("passage", limit=10)
+        global_hits = self.index.search("passage", limit=10)["results"]
         self.assertEqual(len({hit["item_key"] for hit in global_hits}), 2)
-        scoped_hits = self.index.search("passage", limit=10, item_keys=["ABCD1234"], item_scope=True)
+        scoped_hits = self.index.search("passage", limit=10, item_keys=["ABCD1234"], item_scope=True)["results"]
         self.assertGreaterEqual(len(scoped_hits), 2)
+        self.assertIn("content_sha256", scoped_hits[0]["provenance"])
+        self.assertIn("char_start", scoped_hits[0]["provenance"])
 
     def test_search_never_updates(self):
         self.update()

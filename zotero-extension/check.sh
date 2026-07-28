@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
-XPI=${1:-build/zotero-agent-library-0.2.0.xpi}
+XPI=${1:-build/zotero-agent-library-0.3.0.xpi}
 
 require() {
   grep -Fq -- "$2" "$1" || {
@@ -12,7 +12,7 @@ require() {
   }
 }
 
-require manifest.json '"version": "0.2.0"'
+require manifest.json '"version": "0.3.0"'
 require manifest.json '"id": "zotero-agent-library@local"'
 require manifest.json '"update_url": "https://127.0.0.1:1/zotero-agent-library/updates.json"'
 require manifest.json '"strict_min_version": "7.0"'

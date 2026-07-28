@@ -18,7 +18,7 @@ Requests use a fixed-operation envelope:
 {"protocol":1,"operation":"health","arguments":{}}
 ```
 
-Version 0.2.0 allows `health` and one write operation, `fulltext_adopt`. The write request contains only a Session ID, parent and attachment keys, reviewed absolute path and SHA-256, and explicitly selected replacement attachment keys:
+Version 0.3.0 allows `health` and one write operation, `fulltext_adopt`. The write request contains only a Session ID, parent and attachment keys, reviewed absolute path and SHA-256, and explicitly selected replacement attachment keys:
 
 ```json
 {"protocol":1,"operation":"fulltext_adopt","arguments":{"session_id":"agent-1","item_key":"ABCD2345","markdown_attachment_key":"EFGH6789","expected_path":"/home/user/Zotero/storage/EFGH6789/source.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}

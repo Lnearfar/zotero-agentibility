@@ -2,7 +2,7 @@
 
 Linux-first tools that let people and agents work from the same Zotero-managed literature and Full Text.
 
-> **Status:** v0.2.0 supports Zotero navigation, metadata lookup, Markdown-first/PDF-fallback reading, lexical finding, migration audits, and explicitly confirmed Markdown Full Text adoption. Semantic indexing and broader Zotero management remain unimplemented.
+> **Status:** v0.3.0 adds local passage-level semantic indexing and search to Zotero navigation, grounded reading, lexical finding, migration audits, and explicitly confirmed Markdown Full Text adoption. Broader Zotero ingest and management commands remain unimplemented.
 
 ## Components
 
@@ -19,10 +19,10 @@ No component installs another one. All share the version in [`VERSION`](VERSION)
 The project follows the Ponytail principle: the shortest reliable path wins.
 
 - One standalone CLI; no daemon, MCP server, compatibility layer, or automatic installer.
-- Python standard library plus Click, using Zotero's existing Local API, immutable SQLite catalog, and system Poppler instead of new service layers.
-- Markdown-first reading with PDF fallback and line/page provenance.
+- Python standard library, Click, and Chroma's local ONNX MiniLM runtime, using Zotero's Local API, immutable SQLite catalog, and system Poppler instead of a new service layer.
+- Markdown-first reading and semantic Passage indexing with PDF fallback and line/page provenance.
 - Explicit per-agent sessions; no hidden global working Collection.
-- Local-first behavior; v0.2.0 writes only explicitly confirmed Markdown Full Text adoptions through the authenticated Extension.
+- Local-first behavior; v0.3.0 writes only explicitly confirmed Markdown Full Text adoptions through the authenticated Extension.
 - Three independently replaceable components rather than cross-installing components.
 
 ## Requirements
@@ -32,6 +32,7 @@ The project follows the Ponytail principle: the shortest reliable path wins.
 - Python 3.10 or newer and [`uv`](https://docs.astral.sh/uv/).
 - Poppler (`pdftotext`, `pdfinfo`).
 - `make`, `zip`, and `unzip` to build and inspect the XPI.
+- About 80 MB for Chroma's `all-MiniLM-L6-v2` ONNX model; Chroma downloads it once if it is not already cached.
 
 On Debian/Ubuntu:
 
@@ -71,7 +72,7 @@ make -C zotero-extension
 In Zotero, open **Tools → Add-ons**, choose **Install Add-on From File**, select:
 
 ```text
-zotero-extension/build/zotero-agent-library-0.2.0.xpi
+zotero-extension/build/zotero-agent-library-0.3.0.xpi
 ```
 
 Restart Zotero. On first startup the Extension creates `~/.config/zotero-agent-library/bridge-token` with mode `0600`. The Extension exposes authenticated `health` and fixed `fulltext_adopt`; it has no generic mutation or JavaScript endpoint.
@@ -94,6 +95,7 @@ The root README is the installation guide. `SKILL.md` contains runtime workflow 
 ```bash
 command -v zotero-cli
 zotero-cli --help
+zotero-cli --json index status
 zotero-cli --json app doctor
 ```
 
@@ -108,6 +110,7 @@ All checks should pass after Zotero and the matching Extension are running. Use 
 | Zotero Extension | Active Zotero profile's `extensions/`, managed by Zotero under ID `zotero-agent-library@local` |
 | Agent Skill | `~/.agents/skills/research-with-zotero/` with the commands above, or the harness-specific skill directory you chose |
 | Bridge token and session state | `~/.config/zotero-agent-library/` |
+| Semantic index | `~/.local/share/zotero-agent-library/index/<zotero-profile>/` |
 
 The built XPI remains at `zotero-extension/build/` in the checkout. Zotero's literature database and attachment storage remain in Zotero's own data directory and are not relocated.
 
@@ -121,10 +124,10 @@ The built XPI remains at `zotero-extension/build/` in the checkout. Zotero's lit
    rm -rf ~/.agents/skills/research-with-zotero
    ```
 
-3. Optionally remove only this project's token and Browsing Sessions:
+3. Optionally remove this project's runtime state and fresh semantic index:
 
    ```bash
-   rm -rf ~/.config/zotero-agent-library
+   rm -rf ~/.config/zotero-agent-library ~/.local/share/zotero-agent-library
    ```
 
 Deleting runtime state does not delete Zotero items, PDFs, Markdown attachments, or the Zotero database. If installation replaced a `zotero-cli` supplied by another uv tool, reinstall that tool to restore its executable. Delete the Git checkout separately if it is no longer needed.
@@ -139,12 +142,15 @@ zotero-cli --session "$session" --json lookup ITEM_KEY
 zotero-cli --session "$session" --json source ITEM_KEY
 zotero-cli --session "$session" --json read ITEM_KEY --start 1 --limit 200
 zotero-cli --session "$session" --json find ITEM_KEY "exact phrase" --context 8
+zotero-cli --json index update                 # explicit; never triggered by search
+zotero-cli --json search "stability proof"    # whole My Library
+zotero-cli --json search "proof" --item ITEM_KEY
 zotero-cli --session "$session" --json fulltext audit --output migration-plan.json
 # After reviewing every candidate in the plan:
 zotero-cli --session "$session" --json fulltext migrate migration-plan.json --confirm
 ```
 
-`read --all` emits untruncated raw text. Ordinary navigation and reading are local and side-effect-free. Full Text adoption requires `--confirm`; the current release still has no semantic `search`, `index`, ingest, merge, or general-purpose write commands.
+`read --all` emits untruncated raw text. Navigation, reading, indexing, and search are local; search never updates implicitly. Full Text adoption requires `--confirm`; the current release still has no ingest, merge, or general-purpose metadata/Collection write commands.
 
 ## Safety and privacy
 
@@ -175,4 +181,4 @@ Its installed copies under `.agents/` and `.claude/` are ignored; the lock file 
 - [Semantic indexing](docs/indexing.md)
 - [Architecture decisions](docs/adr/)
 
-This project is based on [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) at commit `f621952f3645546573d622440cbf707320f7a35f` under Apache-2.0; see [ADR 0004](docs/adr/0004-base-the-cli-on-cli-anything-zotero.md), `zotero-cli/UPSTREAM.md`, and `zotero-extension/UPSTREAM.md`.
+This project is based on [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) at commit `f621952f3645546573d622440cbf707320f7a35f` under Apache-2.0. Semantic-search behavior is additionally derived from [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) 0.6.2 under MIT; see [ADR 0004](docs/adr/0004-base-the-cli-on-cli-anything-zotero.md), `zotero-cli/UPSTREAM.md`, and retained licenses.

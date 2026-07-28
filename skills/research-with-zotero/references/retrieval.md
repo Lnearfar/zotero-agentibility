@@ -4,8 +4,14 @@ Find candidate Literature Items, read bounded source Passages, and return ground
 
 ## Workflow
 
-1. Obtain a stable Item Key from the user or by navigating known Collections with `ls`. Version 0.2.0 has no library-wide semantic search; report that limitation rather than scanning the entire Library.
-2. Inspect candidate metadata with `lookup ITEM_KEY`. Do not select a paper from title similarity alone when identity matters.
+1. For library discovery, check `index status`, then run an English semantic query:
+
+   ```bash
+   zotero-cli --json search "stability proof" --limit 10
+   ```
+
+   Search covers My Library regardless of session cwd. Use `--collection PATH` for an explicit recursive Collection scope or `--item ITEM_KEY` for several matching Passages within one paper. Search never updates implicitly. If it returns `INDEX_UNINITIALIZED`, an explicit `index update` is required before retrying; report any partial indexing errors rather than hiding missing coverage.
+2. Treat every semantic result as a lead. Inspect candidate metadata with `lookup ITEM_KEY`; do not select a paper from title similarity alone when identity matters.
 3. Read every Passage needed for the answer:
 
    ```bash
@@ -13,7 +19,7 @@ Find candidate Literature Items, read bounded source Passages, and return ground
    ```
 
    Follow `nextStart` only as far as needed. Use `find ITEM_KEY "exact phrase" --context 8` for lexical confirmation. Use `read --all` only when the user explicitly requests the entire raw article; the Agent host may still truncate it.
-4. Verify claim wording against returned source lines or PDF pages. If the source is partial, ambiguous, missing, or OCR-only, state that limit rather than filling the gap.
+4. Verify claim wording against returned source lines or PDF pages. If the source or index is partial, ambiguous, missing, or OCR-only, state that limit rather than filling the gap.
 5. Answer concisely with Item Keys and exact locations. For a bibliography-style list, use `Author (Year), Title — Item Key: KEY`.
 
 ## Source selection

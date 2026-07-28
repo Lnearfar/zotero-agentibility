@@ -262,12 +262,41 @@ class Database:
                 )]
         return attachments
 
-    def all_literature_keys(self) -> list[str]:
+    def literature_keys(self, collection_key: str | None = None) -> list[str]:
         with closing(connect_immutable(self.path)) as conn:
-            rows = conn.execute(
-                """SELECT i.key FROM items i JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
-                   WHERE i.libraryID=? AND it.typeName NOT IN ('attachment','note','annotation')
-                   AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=i.itemID) ORDER BY i.itemID""",
-                (self.library_id(),),
-            ).fetchall()
+            if collection_key is None:
+                rows = conn.execute(
+                    """SELECT i.key FROM items i JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
+                       WHERE i.libraryID=? AND it.typeName NOT IN ('attachment','note','annotation')
+                       AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=i.itemID)
+                       ORDER BY i.itemID""",
+                    (self.library_id(),),
+                ).fetchall()
+            else:
+                collection = conn.execute(
+                    """SELECT collectionID FROM collections WHERE key=? AND libraryID=?
+                       AND NOT EXISTS (SELECT 1 FROM deletedCollections d WHERE d.collectionID=collections.collectionID)""",
+                    (collection_key, self.library_id()),
+                ).fetchone()
+                if not collection:
+                    raise CliError("COLLECTION_NOT_FOUND", f"Collection not found: {collection_key}")
+                rows = conn.execute(
+                    """WITH RECURSIVE descendants(collectionID) AS (
+                         SELECT ? UNION
+                         SELECT c.collectionID FROM collections c JOIN descendants d
+                           ON c.parentCollectionID=d.collectionID
+                         WHERE NOT EXISTS (SELECT 1 FROM deletedCollections x WHERE x.collectionID=c.collectionID)
+                       )
+                       SELECT DISTINCT i.key,i.itemID FROM descendants d
+                       JOIN collectionItems ci ON ci.collectionID=d.collectionID
+                       JOIN items i ON i.itemID=ci.itemID
+                       JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
+                       WHERE i.libraryID=? AND it.typeName NOT IN ('attachment','note','annotation')
+                       AND NOT EXISTS (SELECT 1 FROM deletedItems x WHERE x.itemID=i.itemID)
+                       ORDER BY i.itemID""",
+                    (collection["collectionID"], self.library_id()),
+                ).fetchall()
         return [row["key"] for row in rows]
+
+    def all_literature_keys(self) -> list[str]:
+        return self.literature_keys()

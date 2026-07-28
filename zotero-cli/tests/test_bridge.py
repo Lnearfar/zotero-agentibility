@@ -12,7 +12,7 @@ from zotero_cli.errors import CliError
 
 
 class FakeResponse:
-    def __init__(self, body=b'{"ok":true,"protocol":1,"extension_version":"0.2.0"}', status=200):
+    def __init__(self, body=b'{"ok":true,"protocol":1,"extension_version":"0.3.0"}', status=200):
         self.body = body
         self.status = status
 

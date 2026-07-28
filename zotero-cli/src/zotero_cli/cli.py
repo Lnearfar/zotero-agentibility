@@ -38,6 +38,12 @@ def _human(data: Any) -> None:
         for match in data["matches"]:
             click.echo(f"{match['location']}: {match['text']}")
         click.echo(f"{len(data['matches'])}/{data['total']} matches")
+    elif isinstance(data, dict) and "results" in data and "query" in data:
+        for match in data["results"]:
+            location = match.get("provenance", {}).get("location", "unknown location")
+            click.echo(f"[{match['item_key']}, {location}] {match['similarity_score']:.4f}")
+            click.echo(match["matched_passage"])
+        click.echo(f"{len(data['results'])}/{data['total_found']} results")
     elif isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, (dict, list)):
@@ -91,7 +97,7 @@ class RootGroup(click.Group):
 @click.version_option(__version__, prog_name="zotero-cli")
 @click.pass_context
 def cli(ctx: click.Context, session_id: str | None, json_output: bool) -> None:
-    """Local Zotero navigation, grounded reading, and confirmed Full Text adoption."""
+    """Local Zotero navigation, semantic retrieval, and confirmed Full Text adoption."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = build_config(session_id, json_output)
 
@@ -108,11 +114,44 @@ def _database(ctx: click.Context) -> Database:
     return cached
 
 
+def _semantic_index(ctx: click.Context):
+    from .semantic import SemanticIndex, default_index_path
+
+    config = _config(ctx)
+    return SemanticIndex(default_index_path(config.data_dir))
+
+
+def _update_index_after_mutation(
+    ctx: click.Context, db: Database, item_key: str, semantic_index=None
+) -> dict[str, Any] | None:
+    semantic_index = semantic_index or _semantic_index(ctx)
+    try:
+        report = semantic_index.update(db, _config(ctx).data_dir, item_keys=[item_key])
+        return {"ok": not bool(report.get("errors")), "report": report}
+    except Exception as error:
+        return {
+            "ok": False,
+            "error": {
+                "code": getattr(error, "code", "INDEX_UPDATE_FAILED"),
+                "message": str(error),
+            },
+        }
+
+
 def _session(ctx: click.Context) -> dict:
     config = _config(ctx)
     if not config.session_id:
         raise CliError("SESSION_REQUIRED", "Pass --session with an explicit Browsing Session ID")
     return sessions.load(config.config_dir, config.session_id)
+
+
+def _collection_scope(ctx: click.Context, db: Database, path: str) -> list[str]:
+    current_key = None
+    if not path.startswith("/") and path != "My Library":
+        state, _ = _validated_location(ctx, db, _session(ctx))
+        current_key = state.get("collection")
+    collection = db.resolve_collection(path, current_key)
+    return db.literature_keys(collection["key"] if collection else None)
 
 
 def _validated_location(ctx: click.Context, db: Database, state: dict) -> tuple[dict, dict | None]:
@@ -185,14 +224,19 @@ def app_doctor(ctx: click.Context) -> None:
     else:
         bridge = {"ok": False, "protocol": None, "error": "safe token unavailable"}
     tools = {name: {"ok": bool(shutil.which(name)), "path": shutil.which(name)} for name in ("pdftotext", "pdfinfo")}
+    try:
+        index = _semantic_index(ctx).status()
+        index["ok"] = True
+    except Exception as error:
+        index = {"ok": False, "error": {"code": getattr(error, "code", "INDEX_ERROR"), "message": str(error)}}
     database = {"ok": False, "path": str(config.data_dir / "zotero.sqlite")}
     if app["ready"]:
         try:
             database = {**Database(config.data_dir / "zotero.sqlite").schema_check(), "path": database["path"]}
         except CliError as exc:
             database["error"] = {"code": exc.code, "message": exc.message}
-    checks = {"zotero": app, "database": database, "token": token, "bridge": bridge, "tools": tools}
-    ready = app["ready"] and database["ok"] and token["ok"] and bridge["ok"] and bridge["protocol"] == PROTOCOL and all(v["ok"] for v in tools.values())
+    checks = {"zotero": app, "database": database, "token": token, "bridge": bridge, "tools": tools, "index": index}
+    ready = app["ready"] and database["ok"] and token["ok"] and bridge["ok"] and bridge["protocol"] == PROTOCOL and index["ok"] and all(v["ok"] for v in tools.values())
     emit(ctx, {"ready": ready, "protocol": PROTOCOL, "checks": checks}, ok=ready, code="READY" if ready else "DEGRADED")
     if not ready:
         ctx.exit(1)
@@ -299,6 +343,101 @@ def find_command(ctx: click.Context, item_key: str, query: str, context: int, li
     emit(ctx, sources.lexical_find(source, query, limit=limit, context=context))
 
 
+@cli.group("index")
+def index_group() -> None:
+    """Update and inspect the local semantic Passage index."""
+
+
+@index_group.command("update", help="Explicitly update changed semantic Passages.")
+@click.option("--force", is_flag=True, help="Rebuild selected records even when unchanged.")
+@click.option("--item", "item_keys", multiple=True, help="Update only this Literature Item; repeatable.")
+@click.option("--collection", help="Update only an explicit Collection path and descendants.")
+@click.pass_context
+def index_update(
+    ctx: click.Context, force: bool, item_keys: tuple[str, ...], collection: str | None
+) -> None:
+    if item_keys and collection:
+        raise CliError("INVALID_ARGUMENT", "Use --collection or --item, not both")
+    config = _config(ctx)
+    db = _database(ctx)
+    for key in item_keys:
+        db.lookup(key)
+    selected_keys = _collection_scope(ctx, db, collection) if collection else list(item_keys) or None
+    result = _semantic_index(ctx).update(
+        db, config.data_dir, force=force, item_keys=selected_keys
+    )
+    errors = result.get("errors", [])
+    emit(ctx, result, ok=not errors, code="OK" if not errors else "INDEX_PARTIAL")
+    if errors:
+        ctx.exit(1)
+
+
+@index_group.command("status", help="Show semantic index readiness and coverage.")
+@click.pass_context
+def index_status(ctx: click.Context) -> None:
+    emit(ctx, _semantic_index(ctx).status())
+
+
+@index_group.command("inspect", help="Inspect indexed Passage metadata.")
+@click.option("--limit", default=20, show_default=True, type=int, help="Maximum records to return.")
+@click.option("--filter", "filter_text", help="Case-insensitive title or creator substring.")
+@click.option("--documents", "show_documents", is_flag=True, help="Include stored Passage text.")
+@click.option("--stats", is_flag=True, help="Include source and item-type counts.")
+@click.pass_context
+def index_inspect(
+    ctx: click.Context, limit: int, filter_text: str | None, show_documents: bool, stats: bool
+) -> None:
+    emit(ctx, _semantic_index(ctx).inspect(
+        limit=limit, filter_text=filter_text, show_documents=show_documents, stats=stats
+    ))
+
+
+@cli.command("search", help="Search indexed Passages by semantic similarity.")
+@click.argument("query")
+@click.option("--limit", default=10, show_default=True, type=int, help="Maximum Literature Items or Passages.")
+@click.option("--collection", help="Recursively scope to an explicit Collection path.")
+@click.option("--item", "item_key", help="Return matching Passages from one Literature Item.")
+@click.option("--filters", help="Additional Chroma metadata filter as JSON.")
+@click.pass_context
+def search_command(
+    ctx: click.Context,
+    query: str,
+    limit: int,
+    collection: str | None,
+    item_key: str | None,
+    filters: str | None,
+) -> None:
+    if collection and item_key:
+        raise CliError("INVALID_ARGUMENT", "Use --collection or --item, not both")
+    parsed_filters = None
+    if filters:
+        try:
+            parsed_filters = json.loads(filters)
+        except json.JSONDecodeError as exc:
+            raise CliError("INVALID_FILTERS", "--filters must be valid JSON") from exc
+        if not isinstance(parsed_filters, dict):
+            raise CliError("INVALID_FILTERS", "--filters must be a JSON object")
+        if "itemType" in parsed_filters and "item_type" not in parsed_filters:
+            parsed_filters["item_type"] = parsed_filters.pop("itemType")
+
+    db = _database(ctx)
+    item_keys = None
+    if item_key:
+        db.lookup(item_key)
+        item_keys = [item_key]
+    elif collection:
+        item_keys = _collection_scope(ctx, db, collection)
+
+    result = _semantic_index(ctx).search(
+        query,
+        limit=limit,
+        filters=parsed_filters,
+        item_keys=item_keys,
+        item_scope=item_key is not None,
+    )
+    emit(ctx, result)
+
+
 @cli.group("fulltext")
 def fulltext_group() -> None:
     """Audit and safely adopt canonical Markdown Full Text."""
@@ -334,8 +473,9 @@ def fulltext_adopt(
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to adopt Markdown Full Text")
     state = _session(ctx)
     config = _config(ctx)
+    db = _database(ctx)
     snapshot = sources.adoption_snapshot(
-        _database(ctx), item_key, markdown_attachment_key, config.data_dir, replace_keys
+        db, item_key, markdown_attachment_key, config.data_dir, replace_keys
     )
     try:
         result = BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_adopt(
@@ -356,7 +496,14 @@ def fulltext_adopt(
             "errorCode": error.code,
             "markdownAttachmentKey": details.get("markdown_attachment_key"),
             "trashedAttachmentKeys": details.get("trashed_attachment_keys", []),
+            "index": _update_index_after_mutation(ctx, db, item_key),
         }, ok=False, code=error.code)
+        ctx.exit(1)
+    index_result = _update_index_after_mutation(ctx, db, item_key)
+    result["index"] = index_result
+    if index_result is not None and not index_result["ok"]:
+        result["status"] = "committed_with_index_warning"
+        emit(ctx, result, ok=False, code="INDEX_UPDATE_FAILED_AFTER_WRITE")
         ctx.exit(1)
     emit(ctx, result)
 
@@ -370,8 +517,10 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to apply a reviewed migration plan")
     state = _session(ctx)
     config = _config(ctx)
-    plan_path, candidates = sources.load_migration_candidates(plan, _database(ctx), config.data_dir)
+    db = _database(ctx)
+    plan_path, candidates = sources.load_migration_candidates(plan, db, config.data_dir)
     bridge = BridgeClient(config.port, config.config_dir / "bridge-token")
+    semantic_index = _semantic_index(ctx)
     results = []
     succeeded = failed = warnings = unknown = rollback_failed = 0
     for candidate in candidates:
@@ -385,10 +534,17 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
                 replace_attachment_keys=candidate["replaceAttachmentKeys"],
             )
             succeeded += 1
+            index_result = _update_index_after_mutation(
+                ctx, db, candidate["itemKey"], semantic_index
+            )
+            if index_result is not None and not index_result["ok"]:
+                warnings += 1
             results.append({
                 "itemKey": candidate["itemKey"],
-                "status": "success",
+                "status": "committed_with_index_warning"
+                    if index_result is not None and not index_result["ok"] else "success",
                 "markdownAttachmentKey": result.get("markdown_attachment_key"),
+                "index": index_result,
             })
         except CliError as error:
             if error.code == "AUDIT_LOG_FAILED_AFTER_WRITE":
@@ -399,6 +555,9 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
                     "status": "committed_with_warning",
                     "errorCode": error.code,
                     "markdownAttachmentKey": (error.details or {}).get("markdown_attachment_key"),
+                    "index": _update_index_after_mutation(
+                        ctx, db, candidate["itemKey"], semantic_index
+                    ),
                 })
                 continue
             if error.code == "WRITE_OUTCOME_UNKNOWN":

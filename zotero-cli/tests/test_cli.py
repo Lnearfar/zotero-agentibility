@@ -23,15 +23,34 @@ class CliShapeTests(unittest.TestCase):
             "cd        Change this session's current Collection.",
             "find      Find exact text in the selected Full Text source.",
             "fulltext  Audit and safely adopt canonical Markdown Full Text.",
+            "index     Update and inspect the local semantic Passage index.",
             "lookup    Show metadata for a Literature Item.",
             "ls        List child Collections and Literature Items.",
             "pwd       Show this session's current Collection path.",
             "read      Read bounded lines from the selected Full Text source.",
+            "search    Search indexed Passages by semantic similarity.",
             "session   Create and inspect independent Browsing Sessions.",
             "source    Show the selected Markdown Full Text or fallback PDF.",
         ):
             self.assertIn(summary, result.output)
         self.assertIn("zotero-cli COMMAND --help", result.output)
+
+    def test_semantic_search_never_updates_implicitly(self):
+        search_result = {"query": "stability", "results": [], "total_found": 0}
+        with mock.patch("zotero_cli.cli._database") as database, \
+             mock.patch("zotero_cli.cli._semantic_index") as semantic:
+            semantic.return_value.search.return_value = search_result
+            result = CliRunner().invoke(cli, [
+                "--json", "search", "stability", "--item", "ABCD2345",
+                "--filters", '{"itemType":"journalArticle"}',
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        database.return_value.lookup.assert_called_once_with("ABCD2345")
+        semantic.return_value.search.assert_called_once_with(
+            "stability", limit=10, filters={"item_type": "journalArticle"},
+            item_keys=["ABCD2345"], item_scope=True,
+        )
+        semantic.return_value.update.assert_not_called()
 
     @mock.patch("zotero_cli.cli.BridgeClient")
     def test_fulltext_adopt_requires_confirmation_before_bridge(self, bridge):
@@ -53,6 +72,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("zotero_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("zotero_cli.cli._database"), \
              mock.patch("zotero_cli.cli.sources.adoption_snapshot", return_value=snapshot), \
+             mock.patch("zotero_cli.cli._update_index_after_mutation", return_value=None), \
              mock.patch("zotero_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.return_value = {"markdown_attachment_key": "NEWW2345"}
             result = CliRunner().invoke(cli, [
@@ -82,6 +102,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("zotero_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("zotero_cli.cli._database"), \
              mock.patch("zotero_cli.cli.sources.adoption_snapshot", return_value=snapshot), \
+             mock.patch("zotero_cli.cli._update_index_after_mutation", return_value=None), \
              mock.patch("zotero_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.side_effect = warning
             result = CliRunner().invoke(cli, [
@@ -102,6 +123,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("zotero_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("zotero_cli.cli._database"), \
              mock.patch("zotero_cli.cli.sources.load_migration_candidates", return_value=(Path("/plan.json"), candidates)), \
+             mock.patch("zotero_cli.cli._update_index_after_mutation", return_value=None), \
              mock.patch("zotero_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.side_effect = [
                 {"markdown_attachment_key": "STUV2345"},
@@ -125,6 +147,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("zotero_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("zotero_cli.cli._database"), \
              mock.patch("zotero_cli.cli.sources.load_migration_candidates", return_value=(Path("/plan.json"), candidates)), \
+             mock.patch("zotero_cli.cli._update_index_after_mutation", return_value=None), \
              mock.patch("zotero_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.side_effect = CliError("WRITE_OUTCOME_UNKNOWN", "inspect first")
             result = CliRunner().invoke(cli, [
