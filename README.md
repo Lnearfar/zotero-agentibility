@@ -81,8 +81,10 @@ Restart Zotero. On first startup the Extension creates `~/.config/zotero-agent-l
 Copy the Skill manually to a directory discovered by the Agent harness. The portable default is:
 
 ```bash
-mkdir -p ~/.agents/skills
-cp -a skills/research-with-zotero ~/.agents/skills/
+skill_dir=~/.agents/skills/research-with-zotero
+rm -rf "$skill_dir"
+mkdir -p "$skill_dir"
+cp -a skills/research-with-zotero/{SKILL.md,LICENSE,references} "$skill_dir/"
 ```
 
 The root README is the installation guide. `SKILL.md` contains runtime workflow instructions only.
