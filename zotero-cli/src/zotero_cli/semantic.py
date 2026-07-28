@@ -244,12 +244,21 @@ class SemanticIndex:
             return {}
 
     def _save_state(self, report: dict[str, Any]) -> None:
-        state = {
+        state = self._state()
+        state.update({
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "complete": not bool(report["errors"]),
             "scope": report.get("scope"),
             "report": {key: value for key, value in report.items() if key != "errors"},
-        }
+        })
+        if report.get("scope") == "library" or int(report.get("total", 0)) > 1:
+            state["last_bulk_update"] = {
+                "updated_at": state["updated_at"],
+                "complete": state["complete"],
+                "scope": state["scope"],
+                "total": report.get("total", 0),
+                "errors": len(report["errors"]),
+            }
         target = self.index_path / "state.json"
         temporary = target.with_suffix(".tmp")
         temporary.write_text(json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -477,6 +486,7 @@ class SemanticIndex:
             "last_update": state.get("updated_at"),
             "last_update_complete": state.get("complete"),
             "last_update_scope": state.get("scope"),
+            "last_bulk_update": state.get("last_bulk_update"),
         }
         return {"collection_info": info, **info, "path": str(self.index_path), "initialized": bool(count)}
 

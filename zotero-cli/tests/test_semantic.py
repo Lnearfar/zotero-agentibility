@@ -154,6 +154,12 @@ class SemanticTests(unittest.TestCase):
         self.assertIn("content_sha256", scoped_hits[0]["provenance"])
         self.assertIn("char_start", scoped_hits[0]["provenance"])
 
+    def test_single_item_update_preserves_last_bulk_status(self):
+        self.db.items["EFGH5678"] = {"title": "B", "typeName": "book", "fields": {}, "creators": [], "tags": []}
+        self.update()
+        self.update(item_keys=["ABCD1234"])
+        self.assertEqual(self.index.status()["last_bulk_update"]["total"], 2)
+
     def test_search_never_updates(self):
         self.update()
         with patch.object(self.index, "update", side_effect=AssertionError("search updated")):
