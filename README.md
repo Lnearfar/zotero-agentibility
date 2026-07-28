@@ -153,6 +153,16 @@ zotero-cli --session "$session" --json fulltext audit --output migration-plan.js
 - There is no telemetry and no paper Full Text is sent to an external service.
 - Future writes are limited to My Library and Zotero Trash; group libraries remain read-only.
 
+## Development documentation
+
+The project-local `doc` Skill is a development dependency recorded in [`skills-lock.json`](skills-lock.json). Restore it after cloning with:
+
+```bash
+npx skills experimental_install
+```
+
+Its installed copies under `.agents/` and `.claude/` are ignored; the lock file is tracked. Git tracks durable project knowledge—this README, `CONTEXT.md`, `docs/`, ADRs, and release metadata—but not generated audits, local Skill copies, build output, migration plans, or `.dev/` notes. Promote any lasting conclusion from a generated report into `docs/` or an ADR before committing it.
+
 ## Documentation
 
 - [Domain language](CONTEXT.md)

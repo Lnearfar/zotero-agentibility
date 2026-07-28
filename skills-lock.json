@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "doc": {
+      "source": "boshu2/agentops",
+      "sourceType": "github",
+      "skillPath": "skills/doc/SKILL.md",
+      "computedHash": "d86e52840e6df84cea99eff00203dc28b608cb8c1d59face922329244ff4237a"
+    }
+  }
+}

@@ -6,3 +6,5 @@ build/
 dist/
 *.xpi
 migration-plan*.json
+.agents/
+.claude/
