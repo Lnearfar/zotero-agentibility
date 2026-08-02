@@ -49,7 +49,7 @@ Version 0.3.0 is Linux-only and supports Zotero 7–9. It requires Python 3.10+,
 Run these commands from a local checkout of this repository:
 
 ```bash
-cd /path/to/zotero-paper-file-system
+cd /path/to/zotero-paper-agent
 sudo apt install poppler-utils make zip unzip
 # Editable install: bare `zotero-cli` runs this checkout's source.
 uv tool install --editable --force ./zotero-cli
