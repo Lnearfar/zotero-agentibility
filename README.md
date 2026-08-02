@@ -19,22 +19,22 @@ Making Zotero natively and safely operable for your AI agent — CLI, Skill, and
 
 ## 1. Introduction
 
-### key features and overview: 
+### Key Features and Overview 
 
-- skill+cli: triggered loading only when related to zotero;
-- add markdown file integration; 
-- semantic search with markdown.
+- skill+cli: only load instruction prompts as LLM context when the task involves Zotero;
+- add Markdown file integration; 
+- semantic search with Markdown.
 - ...
 
 
 
 
 
-### function preview:
+### Function Preview
 
-After installation, in any AI-agent, you type:
+Once installed, in any AI agent, you just say:
 ```txt
-Explain to me what this concept is: Sampling-Based Methods for Optimal Control. My zotero collection is '/My Library/control'.
+Explain to me what this concept is: Sampling-Based Methods for Optimal Control. My Zotero collection is '/My Library/control'.
 ```
 
 Your Agent:
@@ -46,17 +46,16 @@ bash za-cli search "sampling-based methods for optimal control"
 Agent: According to paper xxx , sampling-based methods are ...
 ```
 
-#### Why markdown integration is important?
-Improve 
-Before: your AI-agent find `Attention is all you need.pdf`, read pdf, get the following: 
+#### Why Markdown Integration Is Important
+Before: your AI agent finds `Attention is all you need.pdf`, reads the PDF, and gets something like: 
 ```txt
 In this work, we use sine and cosine functions of different frequencies:
 PE(pos,2i) = sin(pos/100002i/dmodel)
 PE(pos,2i+1) = cos(pos/100002i/dmodel)
 ```
-❌ which is wrong in meaning.
+❌ which gets the formula completely wrong.
 
-With pdf conversion skill to markdown:(for example `mineru`(recommended)/or exsiting markdown file `Attention.md`.) What your ai-agent do and read: 
+With a PDF-to-Markdown converter (e.g. `mineru`, recommended), or an existing `Attention.md` file, here's what your AI agent actually sees: 
 ```txt
 $ bash za-cli --json read ITEM_KEY --start 1 --limit 200
 [result] In this work, we use sine and cosine functions of different frequencies:
@@ -64,23 +63,23 @@ $$
 \begin{array}{r} P E _ {(p o s, 2 i)} = \sin (p o s / 1 0 0 0 0 ^ {2 i / d _ {\mathrm{model}}}) \\ P E _ {(p o s, 2 i + 1)} = \cos (p o s / 1 0 0 0 0 ^ {2 i / d _ {\mathrm{model}}}) \end{array}\begin{array}{r} P E _ {(p o s, 2 i)} = \sin (p o s / 1 0 0 0 0 ^ {2 i / d _ {\mathrm{model}}}) \\ P E _ {(p o s, 2 i + 1)} = \cos (p o s / 1 0 0 0 0 ^ {2 i / d _ {\mathrm{model}}}) \end{array}
 $$
 ```
-✅ formula in the right markdown format.
+✅ Now the formula comes through intact.
 
 --- 
 
 
-### comparison with other projects
+### Comparison with Other Projects
 
-Zotero libraries are organized around PDF attachments. Humans read PDFs; however, LLM-based AI agents need Markdown in plain text to read papers precisely. No project handles this complete problem in one place.
+Zotero libraries are built around PDFs. Humans read PDFs just fine, but LLM-based AI agents need plain-text Markdown to read papers accurately. No single project covers all of this in one place.
 
 - [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) provides broad Zotero automation, but no Markdown integration.
 - [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) provides local semantic retrieval using parsed PDFs rather than precise Markdown.
-- [`zotero-markdb-connect`](https://github.com/daeh/zotero-markdb-connect) provides Markdown-note compatibility rather than compatibility with the Markdown papers themselves.
+- [`zotero-markdb-connect`](https://github.com/daeh/zotero-markdb-connect) is about Markdown notes, not the papers themselves as Markdown.
 
 
 ## 2. Installation
 
-### Prerequirement
+### Prerequisites
 Linux-only and supports Zotero 7–9. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
 
 
@@ -97,7 +96,7 @@ make -C zotero-extension
 ```
 
 In Zotero, open **Tools → Add-ons → Install Add-on From File**, select
-`zotero-extension/build/zotero-paper-agent-0.3.0.xpi`, and restart Zotero.
+`zotero-extension/build/zotero-paper-agent-*.xpi`, and restart Zotero.
 Then install the Agent Skill:
 
 ```bash
@@ -116,11 +115,11 @@ zotero-cli --json app doctor
 Install https://github.com/Lnearfar/zotero-paper-agent for me.
 ```
 
-### Installation summmary: what has been installed?
+### Installation Summary: What Has Been Installed?
 
-a uv tool: za-cli
-an agent skill: research-with-zotero
-a zotero extension:
+A uv tool: za-cli
+An agent skill: research-with-zotero
+A Zotero extension:
 
 
 
@@ -144,7 +143,7 @@ A development build can be installed without UI automation by closing Zotero and
 
 ---
 
-## Use case:
+## Use Cases
 task 1:
 
 task 2:
@@ -158,7 +157,7 @@ task 4:
 
 
 
-## 
+## Getting Started
 
 1. Confirm the local stack:
 
@@ -166,7 +165,7 @@ task 4:
    zotero-cli --json app doctor
    ```
 
-2. Build or refresh the index explicitly. Search never updates it on its own:
+2. Build or refresh the index explicitly. Search won't update the index for you:
 
    ```bash
    zotero-cli --json index update
@@ -195,11 +194,11 @@ task 4:
    zotero-cli --session "$session" --json pwd
    ```
 
-Use `zotero-cli --help` and nested command help as the installed syntax reference. Human-readable output is the default; agents and scripts should pass `--json`.
+Use `zotero-cli --help` and subcommand help as your go-to syntax reference. Human-readable output is the default; agents and scripts should pass `--json`.
 
 ## 3. CLI reference
 
-| Command                       | Current v0.3.0 behavior                                                              |
+| Command                       | Behavior                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `app doctor`                  | Validate the local application, bridge, tools, schema, versions, and index           |
 | `session create/status`       | Manage independent per-agent navigation state                                        |
@@ -224,7 +223,7 @@ Semantic updates use a cross-process lock and bounded Chroma batches. Reads and 
 <details>
 <summary><b>Current boundaries</b></summary>
 
-Version 0.3.0 does not provide general ingest, metadata editing, Collection mutation, duplicate merging, OCR, DOCX citation automation, or permanent deletion. It does not package converted image assets; figure verification returns to the PDF. The implemented catalog and Full Text bridge operate on My Library; group libraries are outside the current command surface.
+General ingest, metadata editing, Collection mutation, duplicate merging, OCR, DOCX citation automation, and permanent deletion are not yet implemented. Converted images aren't bundled; for figures, go back to the PDF. The catalog and Full Text bridge work with My Library only; group libraries aren't supported yet.
 
 The index is fresh and profile-specific. It neither reads nor migrates the old `zotero-mcp` Chroma database. External Zotero changes appear after the next explicit `index update`; failed extraction is reported as partial coverage rather than silently omitted.
 
@@ -238,7 +237,7 @@ No. The PDF remains the Source Document and the place to verify page layout and 
 
 ### Does this project convert PDFs to Markdown?
 
-No. Conversion and OCR are external, converter-agnostic steps run only on explicit user intent. The current bridge adopts an existing Markdown child attachment after path, hash, source-PDF, and conflict checks.
+No. Conversion and OCR happen externally, on your terms — this project doesn't do them itself. The current bridge adopts an existing Markdown child attachment after path, hash, source-PDF, and conflict checks.
 
 ### Does paper content leave the machine?
 
@@ -270,7 +269,7 @@ Keep CLI syntax in Click help, multi-command research rules in the Skill, and du
 The repository is licensed under Apache-2.0. It is based on [`cli-anything-zotero`](https://github.com/PiaoyangGuohai1/cli-anything-zotero) at commit `f621952f3645546573d622440cbf707320f7a35f`; semantic-search behavior is also derived from [`zotero-mcp`](https://github.com/54yyyu/zotero-mcp) 0.6.2 under MIT. Modified-file provenance and retained licenses are recorded in [`zotero-cli/UPSTREAM.md`](zotero-cli/UPSTREAM.md), [`zotero-extension/UPSTREAM.md`](zotero-extension/UPSTREAM.md), and `zotero-cli/LICENSES/`.
 
 
-### 4.Uninstall
+### Uninstall
 
 Remove **Zotero-Paper-Agent Bridge** in Zotero's Add-ons manager and restart Zotero, then run:
 
@@ -282,4 +281,12 @@ rm -rf ~/.config/zotero-paper-agent ~/.local/share/zotero-paper-agent
 
 Removing project state does not remove Literature Items, PDFs, Markdown attachments, or Zotero's database. If this installation replaced a `zotero-cli` supplied by another uv tool, reinstall that tool to restore its executable.
 
-## development history：
+## Development History
+
+### v0.3.0
+
+- Initial public release.
+- CLI: catalog reads, sessions, source selection, bounded reading, local ONNX semantic search/index, fulltext audit/adopt/migrate.
+- Extension: bearer-authenticated loopback `health` and `fulltext_adopt`.
+- Skill: `research-with-zotero` agent workflow.
+- Linux-only, Zotero 7–9, Python 3.10+.

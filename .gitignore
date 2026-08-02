@@ -22,3 +22,5 @@ migration-plan*.json
 .pytest_cache/
 .coverage
 htmlcov/
+
+.pi/
