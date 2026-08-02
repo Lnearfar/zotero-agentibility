@@ -18,6 +18,12 @@ PDF-to-Markdown conversion is external to this project and runs only on explicit
 
 Before import or adoption, identify the selected local path or Markdown attachment and run the command without `--confirm` only to inspect help—not as a dry run. If marked Full Text attachments already exist, supply every reported key explicitly with repeatable `--replace KEY`; then require the user's confirmation before adding `--confirm`. Preserve `distill.md`, `probe_distill.md`, and unrelated Markdown. Converted image assets are not imported; inspect the PDF when figures matter.
 
+## Index freshness
+
+- Successful `fulltext import`, `fulltext adopt`, and `fulltext migrate` already attempt the affected Item rebuild. If the result contains an index warning, run `za-cli --json index update --item ITEM_KEY` and report any remaining error.
+- After the Agent observes a new or replaced PDF/Markdown attachment from Zotero sync or another approved tool, run `index update --item ITEM_KEY`. If the affected keys are unknown or the change was a bulk sync, run one full `index update`.
+- Never ask the user to maintain the index manually.
+
 ## Duplicates
 
 Use duplicate detection as a report, not an automatic merge. The caller chooses the keeper. Preview merge first; union memberships, tags, notes, and attachments; collapse only byte-identical PDFs; retain different PDFs. Multiple marked Full Text attachments block merge until one is selected. Confirmed discarded items go to Trash.

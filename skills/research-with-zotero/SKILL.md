@@ -39,7 +39,8 @@ Version 0.4.0 provides local semantic `search` and explicit `index` management. 
 ## Invariants
 
 - A tagged Markdown child attachment is canonical Full Text regardless of PDF changes. Zotero Notes and Annotations are never Full Text.
-- Search and read are side-effect-free. Never trigger conversion, indexing, network lookup, or writes implicitly.
+- Search and read are side-effect-free. Run indexing as an explicit preceding step, never as a hidden side effect.
+- The Agent owns index freshness; never ask the user to run `index update`. Follow the refresh points in the retrieval and mutation references.
 - Treat search snippets as leads. Read the source Passage before making a factual claim.
 - Cite verified claims as `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF, page N]`. Never infer PDF pages for Markdown.
 - Never write `zotero.sqlite`, execute arbitrary Zotero JavaScript, permanently delete data, or write to a group library.

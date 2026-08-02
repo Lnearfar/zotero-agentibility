@@ -4,13 +4,15 @@ Find candidate Literature Items, read bounded source Passages, and return ground
 
 ## Workflow
 
-1. For library discovery, check `index status`, then run an English semantic query:
+1. Before the first semantic search in each conversation, refresh once; do not delegate this to the user:
 
    ```bash
+   za-cli --json index status
+   za-cli --json index update
    za-cli --json search "stability proof" --limit 10
    ```
 
-   Search covers My Library regardless of session cwd. Use `--collection PATH` for an explicit recursive Collection scope or `--item ITEM_KEY` for several matching Passages within one paper. Search never updates implicitly. If it returns `INDEX_UNINITIALIZED`, an explicit `index update` is required before retrying; report any partial indexing errors rather than hiding missing coverage.
+   Do not repeat the full update in the same conversation unless the library changes. Report partial indexing errors rather than hiding missing coverage. Search covers My Library regardless of session cwd; use `--collection PATH` for an explicit recursive Collection scope or `--item ITEM_KEY` for several matching Passages within one paper.
 2. Treat every semantic result as a lead. Inspect candidate metadata with `lookup ITEM_KEY`; do not select a paper from title similarity alone when identity matters.
 3. Read every Passage needed for the answer:
 
