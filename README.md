@@ -8,6 +8,14 @@ Making Zotero natively and safely operable for your AI agent — CLI, Skill, and
 
 </div>
 
+<p align="center">
+  <a href="./assets/readme/zotero-agentibility-demo.mp4">
+    <img src="./assets/readme/zotero-agentibility-demo.gif" width="100%" alt="Live demo: Pi Agent searches Zotero, reads canonical Markdown Full Text, and answers with an exact Item Key and line citation">
+  </a>
+</p>
+
+<p align="center"><sub>Live demo: Zotero → semantic search → exact Markdown reading → grounded answer. Click for MP4.</sub></p>
+
 <!-- <p align="center">
   <img src="./assets/readme/zotero-markdown-compatibility.png" width="100%" alt="Excalidraw diagram: Zotero keeps the PDF as Source Document, adopts canonical fulltext.md, and exposes local search, exact reading, and confirmed Full Text operations to an agent">
 </p>
@@ -34,15 +42,15 @@ Making Zotero natively and safely operable for your AI agent — CLI, Skill, and
 
 Once installed, in any AI agent, you just say:
 ```txt
-Explain to me what this concept is: Sampling-Based Methods for Optimal Control. My Zotero collection is '/My Library/control'.
+How does MPPI choose the control sequence? My Zotero Library is '/My Library'.
 ```
 
 Your Agent:
 ```console
 load skill:research-with-zotero
-$ za-cli --json search "sampling-based methods for optimal control" --collection "/My Library/control"
-[search results]
-Agent: According to paper xxx, sampling-based methods are ...
+$ za-cli --json search "sampling-based methods for optimal control" --collection "/My Library" --limit 1
+$ za-cli --json read BG62UI3J --start 66 --limit 8
+MPPI samples control sequences from a Gaussian around the input mean, then selects their softmax cost-weighted average; lower-cost samples receive larger weights. [BG62UI3J, fulltext.md, lines 66-73]
 ```
 
 #### Why Markdown Integration Is Important
