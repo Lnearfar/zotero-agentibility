@@ -1,6 +1,6 @@
 # Mutations
 
-Version 0.3.0 writes only through `fulltext adopt` and `fulltext migrate`. For additions, metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
+Version 0.4.0 writes only through `fulltext import`, `fulltext adopt`, and `fulltext migrate`. For additions, metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
 
 ## Rules
 
@@ -14,9 +14,9 @@ Version 0.3.0 writes only through `fulltext adopt` and `fulltext migrate`. For a
 
 ## Full text
 
-PDF-to-Markdown conversion is external to this project and runs only on explicit user intent. Version 0.3.0 can adopt an existing Zotero Markdown child attachment; it cannot attach an arbitrary converter output. If the output is not already attached, explain that boundary rather than bypassing Zotero.
+PDF-to-Markdown conversion is external to this project and runs only on explicit user intent. Version 0.4.0 can import a reviewed local converter output with `fulltext import ITEM_KEY PATH --confirm` or adopt an existing Zotero Markdown child attachment. Import preserves the local file and requires a regular non-symlink `.md`; never import `distill.md` or `probe_distill.md`.
 
-Before adoption, identify the selected Markdown attachment and run the command without `--confirm` only to inspect help—not as a dry run. If marked Full Text attachments already exist, supply every reported key explicitly with repeatable `--replace KEY`; then require the user's confirmation before adding `--confirm`. Preserve `distill.md`, `probe_distill.md`, and unrelated Markdown. Converted image assets are not imported; inspect the PDF when figures matter.
+Before import or adoption, identify the selected local path or Markdown attachment and run the command without `--confirm` only to inspect help—not as a dry run. If marked Full Text attachments already exist, supply every reported key explicitly with repeatable `--replace KEY`; then require the user's confirmation before adding `--confirm`. Preserve `distill.md`, `probe_distill.md`, and unrelated Markdown. Converted image assets are not imported; inspect the PDF when figures matter.
 
 ## Duplicates
 

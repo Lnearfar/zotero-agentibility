@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from zotero_cli import sessions
+from za_cli import sessions
 
 
 class SessionTests(unittest.TestCase):

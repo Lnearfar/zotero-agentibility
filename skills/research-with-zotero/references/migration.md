@@ -7,7 +7,7 @@ Prepare and apply a reviewable manifest; never let an LLM mutate Zotero directly
 1. Run the read-only audit and save its compact JSON plan:
 
    ```bash
-   zotero-cli --session "$session" --json fulltext audit --output migration-plan.json
+   za-cli --session "$session" --json fulltext audit --output migration-plan.json
    ```
 
 2. Accept deterministic classifications only:
@@ -19,7 +19,7 @@ Prepare and apply a reviewable manifest; never let an LLM mutate Zotero directly
 5. Obtain explicit user confirmation, then run:
 
    ```bash
-   zotero-cli --session "$session" --json fulltext migrate migration-plan.json --confirm
+   za-cli --session "$session" --json fulltext migrate migration-plan.json --confirm
    ```
 
 6. Report every success, definite failure, committed warning, and unknown outcome. A partial failure exits nonzero. A lost bridge connection stops the batch because the outcome is unknown; a rollback failure also stops and reports the orphan attachment key. Inspect that item before any retry. Do not retry stale or conflicting items without a new audit and review.

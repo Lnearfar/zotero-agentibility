@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from zotero_cli.semantic import SemanticIndex, default_index_path
+from za_cli.semantic import SemanticIndex, default_index_path
 
 
 class Embedding:
@@ -81,8 +81,8 @@ class SemanticTests(unittest.TestCase):
 
     def update(self, *, kind="markdown", item_keys=None):
         source = {"kind": kind, "attachmentKey": "EFGH5678", "path": str(self.source), "exists": True}
-        with patch("zotero_cli.semantic.sources.resolve_for_item", return_value=source), patch(
-            "zotero_cli.semantic.sources.read_source",
+        with patch("za_cli.semantic.sources.resolve_for_item", return_value=source), patch(
+            "za_cli.semantic.sources.read_source",
             side_effect=lambda source, **kwargs: {"content": self.source.read_text(encoding="utf-8")},
         ):
             return self.index.update(self.db, self.root, item_keys=item_keys)
@@ -91,7 +91,7 @@ class SemanticTests(unittest.TestCase):
         first = default_index_path(self.root)
         second = default_index_path(self.root.resolve())
         self.assertEqual(first, second)
-        self.assertIn(".local/share/zotero-paper-agent/index", str(first))
+        self.assertIn(".local/share/zotero-agentibility/index", str(first))
         self.assertNotIn("zotero-mcp", str(first))
 
     def test_more_than_120_chunks_are_indexed(self):

@@ -1,4 +1,4 @@
-# Zotero-Paper-Agent
+# Zotero-Agentibility
 
 A literature library that lets people and agents work from the same Zotero-managed records and synchronized full text.
 

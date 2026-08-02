@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from zotero_cli.db import Database, connect_immutable
-from zotero_cli.errors import CliError
+from za_cli.db import Database, connect_immutable
+from za_cli.errors import CliError
 
 
 SCHEMA = """
@@ -113,6 +113,10 @@ class DatabaseTests(unittest.TestCase):
             conn.execute("INSERT INTO marker VALUES('right file')")
         with connect_immutable(special) as conn:
             self.assertEqual(conn.execute("SELECT value FROM marker").fetchone()[0], "right file")
+
+    def test_my_library_path_without_leading_slash_is_absolute(self):
+        resolved = self.db.resolve_collection("My Library/Research/Methods")
+        self.assertEqual(resolved["key"], "CHILDCOL")
 
     def test_ambiguous_collection_path_reports_keys(self):
         with sqlite3.connect(self.path) as conn:

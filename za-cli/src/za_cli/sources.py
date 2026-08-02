@@ -20,8 +20,8 @@ from .db import Database
 from .errors import CliError
 from .poppler import extract_pdf
 
-FULLTEXT_TAG = "zotero-cli:fulltext"
-SOURCE_TAG = "zotero-cli:source"
+FULLTEXT_TAG = "za-cli:fulltext"
+SOURCE_TAG = "za-cli:source"
 _KEY = re.compile(r"^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$")
 
 
@@ -31,7 +31,10 @@ def resolve_attachment_path(attachment: dict, data_dir: Path) -> Path | None:
         return None
     raw = str(raw)
     if raw.startswith("storage:"):
-        return (data_dir / "storage" / attachment["key"] / raw.split(":", 1)[1]).resolve()
+        filename = raw.split(":", 1)[1]
+        if not filename or filename in {".", ".."} or "/" in filename or "\\" in filename:
+            return None
+        return data_dir / "storage" / attachment["key"] / filename
     if raw.startswith("file://"):
         parsed = urlparse(raw)
         if parsed.netloc not in {"", "localhost"}:
@@ -41,13 +44,18 @@ def resolve_attachment_path(attachment: dict, data_dir: Path) -> Path | None:
     return path if path.is_absolute() else (data_dir / path).resolve()
 
 
+def _unsafe_attachment_path(attachment: dict, path: Path | None) -> bool:
+    raw = str(attachment.get("attachmentPath") or "")
+    return bool(path and path.is_symlink()) or raw.startswith("storage:") and path is None
+
+
 def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
     attachments = [a for a in attachments if a.get("typeName") == "attachment"]
     markdown = [a for a in attachments if FULLTEXT_TAG in a.get("tags", [])]
     if len(markdown) > 1:
         raise CliError(
             "MULTIPLE_FULLTEXT",
-            "Literature Item has multiple attachments tagged zotero-cli:fulltext",
+            "Literature Item has multiple attachments tagged za-cli:fulltext",
             details={"keys": [a["key"] for a in markdown]},
         )
     if markdown:
@@ -59,6 +67,8 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
             problems.append("filename must be fulltext.md")
         if selected.get("linkMode") != 0:
             problems.append("attachment must be a Zotero stored file")
+        elif _unsafe_attachment_path(selected, path):
+            problems.append("stored attachment path must be safe and confined")
         if selected.get("title") != "Markdown Full Text":
             problems.append("title must be Markdown Full Text")
         if str(selected.get("contentType") or "").lower() == "application/pdf":
@@ -80,7 +90,7 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
         if len(tagged) > 1:
             raise CliError(
                 "AMBIGUOUS_SOURCE",
-                "Multiple PDFs are tagged zotero-cli:source",
+                "Multiple PDFs are tagged za-cli:source",
                 details={"keys": [a["key"] for a in tagged]},
             )
         if tagged:
@@ -90,7 +100,7 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
         elif len(pdfs) > 1:
             raise CliError(
                 "AMBIGUOUS_SOURCE",
-                "Multiple PDFs require one attachment tagged zotero-cli:source",
+                "Multiple PDFs require one attachment tagged za-cli:source",
                 details={"keys": [a["key"] for a in pdfs]},
             )
         else:
@@ -102,7 +112,7 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
         "attachmentKey": selected["key"],
         "title": selected.get("title") or ("Markdown Full Text" if kind == "markdown" else "PDF"),
         "path": str(path) if path else None,
-        "exists": bool(path and path.is_file()),
+        "exists": bool(path and path.is_file() and not path.is_symlink()),
     }
 
 
@@ -115,7 +125,10 @@ def resolve_for_item(db: Database, item_key: str, data_dir: Path) -> dict:
 def _require_file(source: dict) -> Path:
     if not source.get("path") or not source.get("exists"):
         raise CliError("SOURCE_MISSING", f"Preferred source file is missing: {source.get('attachmentKey')}")
-    return Path(source["path"])
+    path = Path(source["path"])
+    if path.is_symlink() or not path.is_file():
+        raise CliError("SOURCE_MISSING", f"Preferred source file is missing or unsafe: {source.get('attachmentKey')}")
+    return path
 
 
 def segment_markdown(text: str, *, start: int, limit: int, all_text: bool) -> dict:
@@ -215,6 +228,27 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validated_replacements(
+    attachments: list[dict],
+    replace_attachment_keys: tuple[str, ...] | list[str],
+    source_attachment_key: str | None = None,
+) -> list[str]:
+    replacements = list(replace_attachment_keys)
+    if len(replacements) > 32 or len(set(replacements)) != len(replacements) or any(not _KEY.fullmatch(key) for key in replacements):
+        raise CliError("INVALID_REPLACEMENTS", "Replacement keys must be at most 32 unique Zotero attachment keys")
+    marked = sorted(
+        item["key"] for item in attachments
+        if FULLTEXT_TAG in item.get("tags", []) and item["key"] != source_attachment_key
+    )
+    if sorted(replacements) != marked:
+        raise CliError(
+            "FULLTEXT_CONFLICT",
+            "Explicit replacement keys do not match marked Full Text attachments",
+            details={"requiredAttachmentKeys": marked},
+        )
+    return replacements
+
+
 def adoption_snapshot(
     db: Database,
     item_key: str,
@@ -244,24 +278,45 @@ def adoption_snapshot(
     if len(str(path)) > 2048:
         raise CliError("INVALID_FULLTEXT_SOURCE", "Markdown attachment path is too long")
 
-    replacements = list(replace_attachment_keys)
-    if len(replacements) > 32 or len(set(replacements)) != len(replacements) or any(not _KEY.fullmatch(key) for key in replacements):
-        raise CliError("INVALID_REPLACEMENTS", "Replacement keys must be at most 32 unique Zotero attachment keys")
-    marked = sorted(
-        item["key"] for item in attachments
-        if FULLTEXT_TAG in item.get("tags", []) and item["key"] != attachment_key
-    )
-    if sorted(replacements) != marked:
-        raise CliError(
-            "FULLTEXT_CONFLICT",
-            "Explicit replacement keys do not match marked Full Text attachments",
-            details={"requiredAttachmentKeys": marked},
-        )
+    replacements = _validated_replacements(attachments, replace_attachment_keys, attachment_key)
     return {
         "itemKey": item_key,
         "attachmentKey": attachment_key,
         "expectedPath": str(path),
         "expectedSha256": _sha256_file(path),
+        "replaceAttachmentKeys": replacements,
+    }
+
+
+def import_snapshot(
+    db: Database,
+    item_key: str,
+    markdown_path: Path,
+    replace_attachment_keys: tuple[str, ...] | list[str] = (),
+) -> dict:
+    if not _KEY.fullmatch(item_key):
+        raise CliError("INVALID_ITEM_KEY", "Item Key must be a valid Zotero key")
+    db.lookup(item_key)
+    path = markdown_path.expanduser()
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise CliError("FULLTEXT_FILE_MISSING", "Markdown import source is missing or unsafe")
+        path = path.resolve(strict=True)
+    except OSError as exc:
+        raise CliError("FULLTEXT_FILE_MISSING", "Markdown import source is missing or unsafe") from exc
+    if path.suffix.lower() != ".md" or path.name.lower() in {"distill.md", "probe_distill.md"}:
+        raise CliError("INVALID_FULLTEXT_SOURCE", "Import source must be a non-distillation Markdown file")
+    if len(str(path)) > 2048:
+        raise CliError("INVALID_FULLTEXT_SOURCE", "Markdown import source path is too long")
+    replacements = _validated_replacements(db.attachments(item_key), replace_attachment_keys)
+    try:
+        digest = _sha256_file(path)
+    except OSError as exc:
+        raise CliError("FULLTEXT_FILE_MISSING", "Markdown import source became unreadable") from exc
+    return {
+        "itemKey": item_key,
+        "sourcePath": str(path),
+        "expectedSha256": digest,
         "replaceAttachmentKeys": replacements,
     }
 
@@ -355,7 +410,8 @@ def fulltext_manifest(db: Database, data_dir: Path) -> dict:
             ambiguous_pdf = attachment["key"] in ambiguous_pdf_keys
             if not (looks_markdown or marked_fulltext or ambiguous_pdf):
                 continue
-            exists = bool(path and path.is_file())
+            unsafe_path = _unsafe_attachment_path(attachment, path)
+            exists = bool(path and path.is_file() and not unsafe_path)
             if marked_fulltext:
                 tagged_keys.append(attachment["key"])
             lower = filename.lower()
@@ -368,7 +424,9 @@ def fulltext_manifest(db: Database, data_dir: Path) -> dict:
                 and attachment.get("title") == "Markdown Full Text"
                 and content_type != "application/pdf"
             )
-            if not exists:
+            if unsafe_path:
+                candidate_class, reason = "unresolved", "attachment path is unsafe or outside Zotero storage"
+            elif not exists:
                 candidate_class, reason = "unresolved", "attachment file is missing"
             elif canonical:
                 candidate_class, reason = "canonical", "stored and tagged canonical fulltext.md"

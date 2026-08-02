@@ -1,15 +1,15 @@
 {
   "manifest_version": 2,
-  "name": "Zotero-Paper-Agent Bridge",
-  "version": "0.3.0",
-  "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-paper-agent",
+  "name": "Zotero-Agentibility Bridge",
+  "version": "0.4.0",
+  "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-agentibility",
   "applications": {
     "zotero": {
-      "id": "zotero-paper-agent@local",
-      "update_url": "https://127.0.0.1:1/zotero-paper-agent/updates.json",
+      "id": "zotero-agentibility@local",
+      "update_url": "https://127.0.0.1:1/zotero-agentibility/updates.json",
       "strict_min_version": "7.0",
       "strict_max_version": "9.*"
     }
   },
-  "author": "zotero-paper-agent contributors"
+  "author": "zotero-agentibility contributors"
 }

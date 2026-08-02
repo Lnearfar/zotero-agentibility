@@ -122,6 +122,8 @@ class Database:
         return next((row for row in self.collections() if row["key"] == key), None)
 
     def resolve_collection(self, target: str, current_key: str | None = None) -> dict | None:
+        if target.startswith("My Library/"):
+            target = "/" + target
         if target in {"/", "/My Library", "My Library"}:
             return None
         rows = self.collections()

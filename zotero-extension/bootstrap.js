@@ -1,5 +1,5 @@
 /*
- * Zotero-Paper-Agent bridge, version 0.3.0.
+ * Zotero-Agentibility bridge, version 0.4.0.
  *
  * Derived from cli-anything-zotero's zotero-cli-bridge/bootstrap.js and
  * substantially modified: arbitrary JavaScript execution was removed and
@@ -7,13 +7,13 @@
  * Licensed under Apache-2.0; see LICENSE and UPSTREAM.md.
  */
 
-var ENDPOINT = "/zotero-paper-agent/v1/operation";
+var ENDPOINT = "/zotero-agentibility/v1/operation";
 var PROTOCOL = 1;
-var VERSION = "0.3.0";
+var VERSION = "0.4.0";
 var MAX_BODY_BYTES = 4096;
-var FULLTEXT_TAG = "zotero-cli:fulltext";
-var SOURCE_TAG = "zotero-cli:source";
-var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt"]);
+var FULLTEXT_TAG = "za-cli:fulltext";
+var SOURCE_TAG = "za-cli:source";
+var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import"]);
 var bearerToken = null;
 var writeLocked = false;
 var writeWaiters = [];
@@ -65,7 +65,7 @@ function _operationError(code, message, status, retryable, details) {
 function _sendOperationError(handler, error) {
   var known = !!error.bridgeCode;
   if (!known) {
-    Zotero.logError(new Error("Zotero-Paper-Agent internal write failure"));
+    Zotero.logError(new Error("Zotero-Agentibility internal write failure"));
   }
   var body = {
     ok: false,
@@ -85,20 +85,18 @@ function _sameKeys(value, expected) {
     && Object.keys(value).sort().join(",") === expected.slice().sort().join(",");
 }
 
-function _validateAdoptArguments(args) {
-  var keys = [
-    "expected_path",
-    "expected_sha256",
-    "item_key",
-    "markdown_attachment_key",
-    "replace_attachment_keys",
-    "session_id"
-  ];
+function _validateFulltextArguments(args, operation) {
+  var importing = operation === "fulltext_import";
+  var keys = importing
+    ? ["expected_sha256", "item_key", "replace_attachment_keys", "session_id", "source_path"]
+    : ["expected_path", "expected_sha256", "item_key", "markdown_attachment_key",
+      "replace_attachment_keys", "session_id"];
   if (!_sameKeys(args, keys)) {
-    throw _operationError("BAD_ARGUMENTS", "fulltext_adopt arguments do not match the schema", 400);
+    throw _operationError("BAD_ARGUMENTS", operation + " arguments do not match the schema", 400);
   }
   var itemKey = /^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/;
-  if (!itemKey.test(args.item_key) || !itemKey.test(args.markdown_attachment_key)) {
+  if (!itemKey.test(args.item_key)
+      || (!importing && !itemKey.test(args.markdown_attachment_key))) {
     throw _operationError("BAD_ARGUMENTS", "Item and attachment keys must be valid Zotero keys", 400);
   }
   if (typeof args.session_id !== "string"
@@ -106,9 +104,10 @@ function _validateAdoptArguments(args) {
       || args.session_id === "." || args.session_id === "..") {
     throw _operationError("BAD_ARGUMENTS", "Session ID is invalid", 400);
   }
-  if (typeof args.expected_path !== "string" || args.expected_path[0] !== "/"
-      || args.expected_path.length > 2048 || args.expected_path.indexOf("\0") !== -1) {
-    throw _operationError("BAD_ARGUMENTS", "Expected path must be a bounded absolute Linux path", 400);
+  var path = importing ? args.source_path : args.expected_path;
+  if (typeof path !== "string" || path[0] !== "/"
+      || path.length > 2048 || path.indexOf("\0") !== -1) {
+    throw _operationError("BAD_ARGUMENTS", "Full Text source path must be a bounded absolute Linux path", 400);
   }
   if (typeof args.expected_sha256 !== "string"
       || !/^[0-9a-f]{64}$/.test(args.expected_sha256)) {
@@ -173,11 +172,15 @@ function _isMarkdownAttachment(item) {
       || contentType === "text/markdown" || contentType === "text/x-markdown");
 }
 
-function _rejectDistillation(item) {
-  var filename = _filename(item).toLowerCase();
+function _rejectDistillationFilename(filename) {
+  filename = String(filename || "").toLowerCase();
   if (filename === "distill.md" || filename === "probe_distill.md") {
     throw _operationError("INVALID_FULLTEXT_SOURCE", "Derived distillation cannot become Markdown Full Text", 409);
   }
+}
+
+function _rejectDistillation(item) {
+  _rejectDistillationFilename(_filename(item));
 }
 
 function _sha256File(path) {
@@ -292,7 +295,7 @@ async function _trashImported(item) {
   }
 }
 
-async function _adoptFulltext(args) {
+async function _writeFulltext(args) {
   var libraryID = Zotero.Libraries.userLibraryID;
   var parent = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, args.item_key);
   if (!parent || parent.deleted || !parent.isRegularItem() || parent.libraryID !== libraryID
@@ -301,25 +304,52 @@ async function _adoptFulltext(args) {
       false, { item_key: args.item_key });
   }
 
-  var source = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, args.markdown_attachment_key);
-  if (!source || source.deleted || !source.isAttachment() || source.libraryID !== libraryID
-      || source.parentItemID !== parent.id || !source.isEditable()) {
-    throw _operationError("ATTACHMENT_NOT_WRITABLE", "Markdown attachment is missing or unrelated", 404,
-      false, { attachment_key: args.markdown_attachment_key });
+  var source = null;
+  var sourceFile;
+  if (args.markdown_attachment_key) {
+    source = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, args.markdown_attachment_key);
+    if (!source || source.deleted || !source.isAttachment() || source.libraryID !== libraryID
+        || source.parentItemID !== parent.id || !source.isEditable()) {
+      throw _operationError("ATTACHMENT_NOT_WRITABLE", "Markdown attachment is missing or unrelated", 404,
+        false, { attachment_key: args.markdown_attachment_key });
+    }
+    await source.loadDataType("tags");
+    if (!_isMarkdownAttachment(source)) {
+      throw _operationError("INVALID_FULLTEXT_SOURCE", "Selected attachment is not Markdown", 409);
+    }
+    _rejectDistillation(source);
+    sourceFile = await _attachmentFile(source);
+    if (sourceFile.path !== args.expected_path) {
+      throw _operationError("STALE_ATTACHMENT_PATH", "The selected Markdown attachment path changed after review", 409,
+        false, { attachment_key: source.key });
+    }
+    if (_sha256File(sourceFile.path) !== args.expected_sha256) {
+      throw _operationError("STALE_ATTACHMENT_HASH", "The selected Markdown attachment changed after review", 409,
+        false, { attachment_key: source.key });
+    }
   }
-  await source.loadDataType("tags");
-  if (!_isMarkdownAttachment(source)) {
-    throw _operationError("INVALID_FULLTEXT_SOURCE", "Selected attachment is not Markdown", 409);
-  }
-  _rejectDistillation(source);
-  var sourceFile = await _attachmentFile(source);
-  if (sourceFile.path !== args.expected_path) {
-    throw _operationError("STALE_ATTACHMENT_PATH", "The selected Markdown attachment path changed after review", 409,
-      false, { attachment_key: source.key });
-  }
-  if (_sha256File(sourceFile.path) !== args.expected_sha256) {
-    throw _operationError("STALE_ATTACHMENT_HASH", "The selected Markdown attachment changed after review", 409,
-      false, { attachment_key: source.key });
+  else {
+    var localFile;
+    try {
+      localFile = Zotero.File.pathToFile(args.source_path);
+    }
+    catch (error) {
+      throw _operationError("FULLTEXT_FILE_MISSING", "Markdown import source path is invalid", 409);
+    }
+    if (!localFile.exists() || !localFile.isFile() || localFile.isSymlink()) {
+      throw _operationError("FULLTEXT_FILE_MISSING", "Markdown import source is missing or unsafe", 409);
+    }
+    sourceFile = { path: localFile.path, filename: localFile.leafName };
+    if (sourceFile.path !== args.source_path) {
+      throw _operationError("STALE_SOURCE_PATH", "Markdown import source path changed after review", 409);
+    }
+    if (!sourceFile.filename.toLowerCase().endsWith(".md")) {
+      throw _operationError("INVALID_FULLTEXT_SOURCE", "Import source must be a Markdown file", 409);
+    }
+    _rejectDistillationFilename(sourceFile.filename);
+    if (_sha256File(sourceFile.path) !== args.expected_sha256) {
+      throw _operationError("STALE_SOURCE_HASH", "Markdown import source changed after review", 409);
+    }
   }
 
   await parent.loadDataType("childItems");
@@ -327,7 +357,7 @@ async function _adoptFulltext(args) {
   for (var i = 0; i < children.length; i++) await children[i].loadDataType("tags");
   var marked = children.filter(function (item) { return _hasTag(item, FULLTEXT_TAG); });
   var requiredReplacements = marked
-    .filter(function (item) { return item.key !== source.key; })
+    .filter(function (item) { return !source || item.key !== source.key; })
     .map(function (item) { return item.key; }).sort();
   var providedReplacements = args.replace_attachment_keys.slice().sort();
   if (JSON.stringify(requiredReplacements) !== JSON.stringify(providedReplacements)) {
@@ -361,7 +391,7 @@ async function _adoptFulltext(args) {
 
   var imported = null;
   var committed = false;
-  var touched = [source].concat(replacements).concat([sourceDocument]);
+  var touched = (source ? [source] : []).concat(replacements).concat([sourceDocument]);
   try {
     imported = await Zotero.Attachments.importFromFile({
       file: sourceFile.path,
@@ -391,16 +421,21 @@ async function _adoptFulltext(args) {
       for (var c = 0; c < finalChildren.length; c++) {
         await finalChildren[c].reload(["primaryData", "tags"], true);
       }
-      var finalSource = finalChildren.find(function (item) { return item.key === source.key; });
-      if (!finalSource || !_isMarkdownAttachment(finalSource)) {
-        throw _operationError("STALE_ITEM", "Selected Markdown attachment changed before commit", 409);
+      if (source) {
+        var finalSource = finalChildren.find(function (item) { return item.key === source.key; });
+        if (!finalSource || !_isMarkdownAttachment(finalSource)) {
+          throw _operationError("STALE_ITEM", "Selected Markdown attachment changed before commit", 409);
+        }
+        _rejectDistillation(finalSource);
+        var finalSourceFile = await _attachmentFile(finalSource);
+        if (finalSourceFile.path !== args.expected_path
+            || _sha256File(finalSourceFile.path) !== args.expected_sha256) {
+          throw _operationError("STALE_ATTACHMENT_HASH", "Selected Markdown attachment changed before commit", 409,
+            false, { attachment_key: source.key });
+        }
       }
-      _rejectDistillation(finalSource);
-      var finalSourceFile = await _attachmentFile(finalSource);
-      if (finalSourceFile.path !== args.expected_path
-          || _sha256File(finalSourceFile.path) !== args.expected_sha256) {
-        throw _operationError("STALE_ATTACHMENT_HASH", "Selected Markdown attachment changed before commit", 409,
-          false, { attachment_key: source.key });
+      else if (_sha256File(sourceFile.path) !== args.expected_sha256) {
+        throw _operationError("STALE_SOURCE_HASH", "Markdown import source changed before commit", 409);
       }
       var finalPdfs = finalChildren.filter(function (item) {
         return String(item.attachmentContentType || "").toLowerCase() === "application/pdf"
@@ -415,7 +450,9 @@ async function _adoptFulltext(args) {
       }
       sourceDocument = finalSourceDocument;
       var finalMarked = finalChildren
-        .filter(function (item) { return item.key !== imported.key && item.key !== source.key && _hasTag(item, FULLTEXT_TAG); })
+        .filter(function (item) {
+          return item.key !== imported.key && (!source || item.key !== source.key) && _hasTag(item, FULLTEXT_TAG);
+        })
         .map(function (item) { return item.key; }).sort();
       if (JSON.stringify(finalMarked) !== JSON.stringify(requiredReplacements)) {
         throw _operationError("FULLTEXT_CONFLICT", "Marked Full Text attachments changed before commit", 409,
@@ -437,8 +474,9 @@ async function _adoptFulltext(args) {
         sourceDocument.addTag(SOURCE_TAG, 0);
         await sourceDocument.save({ skipSelect: true });
       }
-      var trashIDs = [source.id].concat(replacements.map(function (item) { return item.id; }));
-      await Zotero.Items.trash(trashIDs);
+      var trashIDs = replacements.map(function (item) { return item.id; });
+      if (source) trashIDs.unshift(source.id);
+      if (trashIDs.length) await Zotero.Items.trash(trashIDs);
       if (!_hasTag(imported, FULLTEXT_TAG)) {
         throw new Error("new fulltext marker missing");
       }
@@ -469,30 +507,33 @@ async function _adoptFulltext(args) {
   return {
     item_key: parent.key,
     markdown_attachment_key: imported.key,
-    adopted_attachment_key: source.key,
-    trashed_attachment_keys: [source.key].concat(replacements.map(function (item) { return item.key; })),
+    adopted_attachment_key: source ? source.key : null,
+    trashed_attachment_keys: (source ? [source.key] : []).concat(replacements.map(function (item) { return item.key; })),
     source_document_key: sourceDocument.key,
     sha256: args.expected_sha256
   };
 }
 
-async function _executeFulltextAdopt(args) {
+async function _executeFulltextWrite(operation, args) {
   var auditFile = _prepareAuditFile();
   var locked = false;
-  var affected = [args.item_key, args.markdown_attachment_key].concat(args.replace_attachment_keys);
+  var affected = [args.item_key].concat(
+    args.markdown_attachment_key ? [args.markdown_attachment_key] : [],
+    args.replace_attachment_keys
+  );
   try {
     await _acquireWriteLock();
     locked = true;
     var result;
     try {
-      result = await _adoptFulltext(args);
+      result = await _writeFulltext(args);
     }
     catch (error) {
       try {
         var failedKeys = error.rollbackAttachmentKey ? affected.concat([error.rollbackAttachmentKey]) : affected;
         var failureResult = error.rollbackResult === "failed" ? "failure_rollback_failed"
           : error.rollbackResult === "trashed" ? "failure_rolled_back" : "failure";
-        _appendAudit(auditFile, args.session_id, "fulltext_adopt", failedKeys, failureResult,
+        _appendAudit(auditFile, args.session_id, operation, failedKeys, failureResult,
           error.bridgeCode || "INTERNAL_ERROR");
       }
       catch (auditError) {
@@ -501,12 +542,12 @@ async function _executeFulltextAdopt(args) {
       throw error;
     }
     try {
-      _appendAudit(auditFile, args.session_id, "fulltext_adopt",
+      _appendAudit(auditFile, args.session_id, operation,
         affected.concat([result.markdown_attachment_key, result.source_document_key]), "success", null);
     }
     catch (auditError) {
       throw _operationError("AUDIT_LOG_FAILED_AFTER_WRITE",
-        "Full Text was adopted but the audit record could not be appended", 500, false,
+        "Full Text was written but the audit record could not be appended", 500, false,
         { item_key: result.item_key, markdown_attachment_key: result.markdown_attachment_key,
           trashed_attachment_keys: result.trashed_attachment_keys });
     }
@@ -551,14 +592,14 @@ function _handleBody(handler, raw) {
 
   var args;
   try {
-    args = _validateAdoptArguments(request.arguments);
+    args = _validateFulltextArguments(request.arguments, request.operation);
   }
   catch (error) {
     _sendOperationError(handler, error);
     return;
   }
-  _executeFulltextAdopt(args).then(function (result) {
-    _send(handler, 200, { ok: true, protocol: PROTOCOL, operation: "fulltext_adopt", result: result });
+  _executeFulltextWrite(request.operation, args).then(function (result) {
+    _send(handler, 200, { ok: true, protocol: PROTOCOL, operation: request.operation, result: result });
   }).catch(function (error) {
     _sendOperationError(handler, error);
   });
@@ -733,7 +774,7 @@ function _configDirectory() {
   var directory = Services.dirsvc.get("Home", Ci.nsIFile);
   directory.append(".config");
   _ensureDirectory(directory, 0o700, false);
-  directory.append("zotero-paper-agent");
+  directory.append("zotero-agentibility");
   _ensureDirectory(directory, 0o700, true);
   return directory;
 }
@@ -785,14 +826,14 @@ function startup() {
       }
     };
     Zotero.Server.Endpoints[ENDPOINT] = bridgeEndpoint;
-    Zotero.debug("[Zotero-Paper-Agent] bridge endpoint registered");
+    Zotero.debug("[Zotero-Agentibility] bridge endpoint registered");
   }
   catch (e) {
     delete Zotero.Server.Endpoints[ENDPOINT];
     _removeServerHooks();
     bearerToken = null;
     bridgeEndpoint = null;
-    Zotero.logError(new Error("Zotero-Paper-Agent bridge disabled: " + e.message));
+    Zotero.logError(new Error("Zotero-Agentibility bridge disabled: " + e.message));
   }
 }
 
@@ -801,7 +842,7 @@ function shutdown() {
   _removeServerHooks();
   bearerToken = null;
   bridgeEndpoint = null;
-  Zotero.debug("[Zotero-Paper-Agent] bridge endpoint removed");
+  Zotero.debug("[Zotero-Agentibility] bridge endpoint removed");
 }
 
 function install() {}

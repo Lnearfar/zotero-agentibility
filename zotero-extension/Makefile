@@ -1,4 +1,4 @@
-XPI := build/zotero-paper-agent-0.3.0.xpi
+XPI := build/zotero-agentibility-0.4.0.xpi
 
 .PHONY: all check xpi clean
 all check xpi:

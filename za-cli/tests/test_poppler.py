@@ -5,15 +5,15 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from zotero_cli.errors import CliError
-from zotero_cli.poppler import extract_pdf, parse_pdfinfo
+from za_cli.errors import CliError
+from za_cli.poppler import extract_pdf, parse_pdfinfo
 
 
 class PopplerTests(unittest.TestCase):
     def test_pdfinfo_parser(self):
         self.assertEqual(parse_pdfinfo("Title: Paper\nPages: 12\n")["pages"], 12)
 
-    @mock.patch("zotero_cli.poppler.subprocess.run")
+    @mock.patch("za_cli.poppler.subprocess.run")
     def test_extract_uses_global_text_lines_and_reports_pages(self, run):
         run.side_effect = [
             subprocess.CompletedProcess(["pdfinfo"], 0, b"Pages: 2\n", b""),
@@ -30,7 +30,7 @@ class PopplerTests(unittest.TestCase):
             ["pdftotext", "-layout", "/tmp/paper.pdf", "-"],
         )
 
-    @mock.patch("zotero_cli.poppler.subprocess.run")
+    @mock.patch("za_cli.poppler.subprocess.run")
     def test_image_only_pdf_requires_ocr(self, run):
         run.side_effect = [
             subprocess.CompletedProcess(["pdfinfo"], 0, b"Pages: 1\n", b""),

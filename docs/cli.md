@@ -1,6 +1,6 @@
 # CLI shape
 
-This document defines the target interface. Version 0.3.0 provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `search`, `index update/status/inspect`, `fulltext audit`, `fulltext adopt`, and `fulltext migrate`; later command groups below are not yet available. The installed command reference is `zotero-cli --help`, with `zotero-cli COMMAND --help` or nested group help for arguments and options.
+This document defines the target interface. Version 0.4.0 provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `search`, `index update/status/inspect`, `fulltext audit`, `fulltext adopt`, `fulltext import`, and `fulltext migrate`; later command groups below are not yet available. The installed command reference is `za-cli --help`, with `za-cli COMMAND --help` or nested group help for arguments and options.
 
 The primary agent workflow uses top-level filesystem-style commands:
 
@@ -8,9 +8,9 @@ The primary agent workflow uses top-level filesystem-style commands:
 pwd  cd  ls  read  find  search  lookup  source  fulltext  index
 ```
 
-Safe functionality inherited from `cli-anything-zotero` remains under its existing groups, including `item`, `collection`, `add`, `import`, `export`, `note`, `tag`, and `app`. Zotero saved-search operations live under `saved-search` so `search` can mean passage-level semantic search.
+Planned post-v0.4 functionality derived from `cli-anything-zotero` may use groups such as `item`, `collection`, `add`, `import`, `export`, `note`, `tag`, and `saved-search`; these groups are not currently installed. The top-level `search` command remains passage-level semantic search.
 
-Collection navigation and mutations use an explicit Browsing Session ID. Global semantic search and index management do not inherit session cwd. The Skill prefers `ZOTERO_CLI_SESSION`, then maps `PI_SESSION_ID`, and otherwise creates a session explicitly; it preserves that session across turns. Collection paths are navigational; Literature Items are addressed by Item Key. Sessions store stable Collection Keys and recompute display paths. An ambiguous path fails with candidate keys, and `cd --collection KEY` resolves it explicitly; a trashed current Collection resets the session to its Library root with a warning.
+Collection navigation and mutations use an explicit Browsing Session ID. Global semantic search and index management do not inherit session cwd. The Skill prefers `ZA_CLI_SESSION`, then maps `PI_SESSION_ID`, and otherwise creates a session explicitly; it preserves that session across turns. Collection paths are navigational; Literature Items are addressed by Item Key. Canonical absolute Collection paths begin with `/My Library/`; the CLI also accepts `My Library/...` as the same absolute path, while other paths remain relative to the current Collection. Sessions store stable Collection Keys and recompute display paths. An ambiguous path fails with candidate keys, and `cd --collection KEY` resolves it explicitly; a trashed current Collection resets the session to its Library root with a warning.
 
 Multiple sessions may read concurrently. Zotero mutations use one bounded global write lock; slow preparation such as downloads, conversion, and embedding happens before or after the locked commit section.
 

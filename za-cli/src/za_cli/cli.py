@@ -91,13 +91,13 @@ class RootGroup(click.Group):
             ctx.exit(1)
 
 
-@click.group(cls=RootGroup, epilog="Run 'zotero-cli COMMAND --help' for command options.")
+@click.group(cls=RootGroup, epilog="Run 'za-cli COMMAND --help' for command options.")
 @click.option("--session", "session_id", help="Explicit Browsing Session ID.")
 @click.option("--json", "json_output", is_flag=True, help="Emit compact JSON.")
-@click.version_option(__version__, prog_name="zotero-cli")
+@click.version_option(__version__, prog_name="za-cli")
 @click.pass_context
 def cli(ctx: click.Context, session_id: str | None, json_output: bool) -> None:
-    """Local Zotero navigation, semantic retrieval, and confirmed Full Text adoption."""
+    """Local Zotero navigation, retrieval, and confirmed Full Text import/adoption."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = build_config(session_id, json_output)
 
@@ -138,6 +138,31 @@ def _update_index_after_mutation(
         }
 
 
+def _run_fulltext_write(ctx: click.Context, db: Database, item_key: str, write) -> None:
+    try:
+        result = write()
+    except CliError as error:
+        if error.code != "AUDIT_LOG_FAILED_AFTER_WRITE":
+            raise
+        details = error.details or {}
+        emit(ctx, {
+            "itemKey": item_key,
+            "status": "committed_with_warning",
+            "errorCode": error.code,
+            "markdownAttachmentKey": details.get("markdown_attachment_key"),
+            "trashedAttachmentKeys": details.get("trashed_attachment_keys", []),
+            "index": _update_index_after_mutation(ctx, db, item_key),
+        }, ok=False, code=error.code)
+        ctx.exit(1)
+    index_result = _update_index_after_mutation(ctx, db, item_key)
+    result["index"] = index_result
+    if index_result is not None and not index_result["ok"]:
+        result["status"] = "committed_with_index_warning"
+        emit(ctx, result, ok=False, code="INDEX_UPDATE_FAILED_AFTER_WRITE")
+        ctx.exit(1)
+    emit(ctx, result)
+
+
 def _session(ctx: click.Context) -> dict:
     config = _config(ctx)
     if not config.session_id:
@@ -160,7 +185,7 @@ def _validated_location(ctx: click.Context, db: Database, state: dict) -> tuple[
         return state, None
     collection = db.collection_by_key(key)
     if collection:
-        return state, collection
+        return state, None
     state["collection"] = None
     sessions.save(_config(ctx).config_dir, state)
     return state, {"code": "COLLECTION_RESET", "message": f"Missing Collection {key}; reset to My Library"}
@@ -440,7 +465,7 @@ def search_command(
 
 @cli.group("fulltext")
 def fulltext_group() -> None:
-    """Audit and safely adopt canonical Markdown Full Text."""
+    """Audit, import, and safely adopt canonical Markdown Full Text."""
 
 
 @fulltext_group.command("audit", help="Create a read-only Markdown migration plan.")
@@ -477,35 +502,48 @@ def fulltext_adopt(
     snapshot = sources.adoption_snapshot(
         db, item_key, markdown_attachment_key, config.data_dir, replace_keys
     )
-    try:
-        result = BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_adopt(
+    _run_fulltext_write(
+        ctx, db, item_key,
+        lambda: BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_adopt(
             session_id=state["id"],
             item_key=snapshot["itemKey"],
             attachment_key=snapshot["attachmentKey"],
             expected_path=snapshot["expectedPath"],
             expected_sha256=snapshot["expectedSha256"],
             replace_attachment_keys=snapshot["replaceAttachmentKeys"],
-        )
-    except CliError as error:
-        if error.code != "AUDIT_LOG_FAILED_AFTER_WRITE":
-            raise
-        details = error.details or {}
-        emit(ctx, {
-            "itemKey": item_key,
-            "status": "committed_with_warning",
-            "errorCode": error.code,
-            "markdownAttachmentKey": details.get("markdown_attachment_key"),
-            "trashedAttachmentKeys": details.get("trashed_attachment_keys", []),
-            "index": _update_index_after_mutation(ctx, db, item_key),
-        }, ok=False, code=error.code)
-        ctx.exit(1)
-    index_result = _update_index_after_mutation(ctx, db, item_key)
-    result["index"] = index_result
-    if index_result is not None and not index_result["ok"]:
-        result["status"] = "committed_with_index_warning"
-        emit(ctx, result, ok=False, code="INDEX_UPDATE_FAILED_AFTER_WRITE")
-        ctx.exit(1)
-    emit(ctx, result)
+        ),
+    )
+
+
+@fulltext_group.command("import", help="Import one local Markdown file as canonical Full Text.")
+@click.argument("item_key")
+@click.argument("markdown_path", type=click.Path(path_type=Path))
+@click.option("--replace", "replace_keys", multiple=True, help="Explicit marked Full Text attachment to replace.")
+@click.option("--confirm", is_flag=True, help="Confirm the recoverable Zotero mutation.")
+@click.pass_context
+def fulltext_import(
+    ctx: click.Context,
+    item_key: str,
+    markdown_path: Path,
+    replace_keys: tuple[str, ...],
+    confirm: bool,
+) -> None:
+    if not confirm:
+        raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to import Markdown Full Text")
+    state = _session(ctx)
+    config = _config(ctx)
+    db = _database(ctx)
+    snapshot = sources.import_snapshot(db, item_key, markdown_path, replace_keys)
+    _run_fulltext_write(
+        ctx, db, item_key,
+        lambda: BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_import(
+            session_id=state["id"],
+            item_key=snapshot["itemKey"],
+            source_path=snapshot["sourcePath"],
+            expected_sha256=snapshot["expectedSha256"],
+            replace_attachment_keys=snapshot["replaceAttachmentKeys"],
+        ),
+    )
 
 
 @fulltext_group.command("migrate", help="Apply reviewed candidate entries from a migration plan.")
@@ -608,7 +646,7 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        result = cli.main(args=args, prog_name="zotero-cli", standalone_mode=False)
+        result = cli.main(args=args, prog_name="za-cli", standalone_mode=False)
         return int(result or 0)
     except click.exceptions.Exit as exc:
         return int(exc.exit_code)

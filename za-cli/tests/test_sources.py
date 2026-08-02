@@ -6,10 +6,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from zotero_cli.errors import CliError
-from zotero_cli.sources import (
+from za_cli.errors import CliError
+from za_cli.sources import (
     adoption_snapshot,
     fulltext_manifest,
+    import_snapshot,
     lexical_find,
     load_migration_candidates,
     preferred_source,
@@ -34,7 +35,7 @@ def attachment(
         "tags": list(tags),
         "typeName": type_name,
         "linkMode": link_mode,
-        "title": title if title is not None else ("Markdown Full Text" if "zotero-cli:fulltext" in tags else ""),
+        "title": title if title is not None else ("Markdown Full Text" if "za-cli:fulltext" in tags else ""),
     }
 
 
@@ -58,7 +59,7 @@ class PreferredSourceTests(unittest.TestCase):
             [
                 attachment("OLDPDF", "storage:old.pdf"),
                 attachment("NEWPDF", "storage:new.pdf"),
-                attachment("MARKDOWN", "storage:fulltext.md", tags=("zotero-cli:fulltext",), content_type="text/markdown"),
+                attachment("MARKDOWN", "storage:fulltext.md", tags=("za-cli:fulltext",), content_type="text/markdown"),
             ],
             Path("/tmp/zotero"),
         )
@@ -68,16 +69,42 @@ class PreferredSourceTests(unittest.TestCase):
     def test_tagged_fulltext_must_use_canonical_filename(self):
         with self.assertRaises(CliError) as caught:
             preferred_source(
-                [attachment("MARKDOWN", "storage:source.md", tags=("zotero-cli:fulltext",), content_type="text/markdown")],
+                [attachment("MARKDOWN", "storage:source.md", tags=("za-cli:fulltext",), content_type="text/markdown")],
                 Path("/tmp/zotero"),
             )
+        self.assertEqual(caught.exception.code, "INVALID_FULLTEXT")
+
+    def test_tagged_fulltext_rejects_unsafe_storage_paths(self):
+        record = attachment(
+            "MARKDOWN", "storage:../../fulltext.md",
+            tags=("za-cli:fulltext",), content_type="text/markdown",
+        )
+        with self.assertRaises(CliError) as caught:
+            preferred_source([record], Path("/tmp/zotero"))
+        self.assertEqual(caught.exception.code, "INVALID_FULLTEXT")
+        self.assertIn("confined", caught.exception.details["problems"][0])
+
+    def test_tagged_fulltext_rejects_storage_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "outside.md"
+            target.write_text("paper", encoding="utf-8")
+            stored = root / "storage" / "MARKDOWN"
+            stored.mkdir(parents=True)
+            (stored / "fulltext.md").symlink_to(target)
+            record = attachment(
+                "MARKDOWN", "storage:fulltext.md",
+                tags=("za-cli:fulltext",), content_type="text/markdown",
+            )
+            with self.assertRaises(CliError) as caught:
+                preferred_source([record], root)
         self.assertEqual(caught.exception.code, "INVALID_FULLTEXT")
 
     def test_note_and_annotation_are_never_candidates(self):
         selected = preferred_source(
             [
-                attachment("NOTE", "storage:note.md", tags=("zotero-cli:fulltext",), content_type="text/markdown", type_name="note"),
-                attachment("ANNOT", "storage:annotation.md", tags=("zotero-cli:fulltext",), content_type="text/markdown", type_name="annotation"),
+                attachment("NOTE", "storage:note.md", tags=("za-cli:fulltext",), content_type="text/markdown", type_name="note"),
+                attachment("ANNOT", "storage:annotation.md", tags=("za-cli:fulltext",), content_type="text/markdown", type_name="annotation"),
                 attachment("PDF", "storage:paper.pdf"),
             ],
             Path("/tmp/zotero"),
@@ -118,7 +145,7 @@ class PreferredSourceTests(unittest.TestCase):
             canonical.write_text("new", encoding="utf-8")
             old.write_text("old", encoding="utf-8")
             records = [
-                attachment("CANONICAL", str(canonical), tags=("zotero-cli:fulltext",), content_type="text/plain"),
+                attachment("CANONICAL", str(canonical), tags=("za-cli:fulltext",), content_type="text/plain"),
                 attachment("OLD", str(old), content_type="text/plain"),
             ]
             manifest = fulltext_manifest(FakeDatabase({"ITEMKEY1": records}), root)
@@ -134,7 +161,7 @@ class PreferredSourceTests(unittest.TestCase):
                 directory.mkdir()
                 path = directory / "fulltext.md"
                 path.write_text(key, encoding="utf-8")
-                records.append(attachment(key, str(path), tags=("zotero-cli:fulltext",), content_type="text/plain"))
+                records.append(attachment(key, str(path), tags=("za-cli:fulltext",), content_type="text/plain"))
             manifest = fulltext_manifest(FakeDatabase({"ITEMKEY1": records}), root)
         self.assertEqual({entry["candidateClass"] for entry in manifest["entries"]}, {"unresolved"})
 
@@ -153,11 +180,21 @@ class PreferredSourceTests(unittest.TestCase):
             path = Path(tmp) / "paper.pdf"
             path.write_bytes(b"pdf")
             manifest = fulltext_manifest(
-                FakeDatabase({"ITEMKEY1": [attachment("BADMARK", str(path), tags=("zotero-cli:fulltext",))]}),
+                FakeDatabase({"ITEMKEY1": [attachment("BADMARK", str(path), tags=("za-cli:fulltext",))]}),
                 Path(tmp),
             )
         self.assertEqual(manifest["entries"][0]["attachmentKey"], "BADMARK")
         self.assertEqual(manifest["entries"][0]["candidateClass"], "unresolved")
+
+    def test_audit_does_not_hash_unsafe_storage_path(self):
+        manifest = fulltext_manifest(
+            FakeDatabase({"ITEMKEY1": [attachment("MARKDOWN", "storage:../../source.md", content_type="text/markdown")]}),
+            Path("/tmp/zotero"),
+        )
+        entry = manifest["entries"][0]
+        self.assertEqual(entry["candidateClass"], "unresolved")
+        self.assertEqual(entry["reason"], "attachment path is unsafe or outside Zotero storage")
+        self.assertIsNone(entry["sha256"])
 
     def test_audit_reports_ambiguous_source_pdfs(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -200,7 +237,7 @@ class PreferredSourceTests(unittest.TestCase):
         with self.assertRaises(CliError):
             segment_markdown("", start=2, limit=20, all_text=False)
 
-    @mock.patch("zotero_cli.sources.extract_pdf")
+    @mock.patch("za_cli.sources.extract_pdf")
     def test_pdf_find_reports_global_line_for_read(self, extract_pdf):
         extract_pdf.return_value = {"content": "one\ntwo\fthree target\nfour\n"}
         with tempfile.TemporaryDirectory() as tmp:
@@ -225,7 +262,7 @@ class PreferredSourceTests(unittest.TestCase):
             db = FakeDatabase({
                 "ABCD2345": [
                     attachment("EFGH6789", str(source), content_type="text/plain"),
-                    attachment("JKLM2345", str(old), tags=("zotero-cli:fulltext",), content_type="text/plain"),
+                    attachment("JKLM2345", str(old), tags=("za-cli:fulltext",), content_type="text/plain"),
                 ]
             })
             with self.assertRaises(CliError) as caught:
@@ -234,6 +271,50 @@ class PreferredSourceTests(unittest.TestCase):
             snapshot = adoption_snapshot(db, "ABCD2345", "EFGH6789", root, ["JKLM2345"])
         self.assertEqual(snapshot["replaceAttachmentKeys"], ["JKLM2345"])
         self.assertEqual(len(snapshot["expectedSha256"]), 64)
+
+    def test_adoption_snapshot_rejects_unsafe_storage_path(self):
+        db = FakeDatabase({
+            "ABCD2345": [attachment("EFGH6789", "storage:../../source.md", content_type="text/markdown")]
+        })
+        with self.assertRaises(CliError) as caught:
+            adoption_snapshot(db, "ABCD2345", "EFGH6789", Path("/tmp/zotero"))
+        self.assertEqual(caught.exception.code, "ATTACHMENT_FILE_MISSING")
+
+    def test_import_snapshot_validates_local_markdown_and_replacements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "converted.md"
+            source.write_text("paper", encoding="utf-8")
+            db = FakeDatabase({
+                "ABCD2345": [
+                    attachment("JKLM2345", str(root / "fulltext.md"),
+                               tags=("za-cli:fulltext",), content_type="text/markdown"),
+                ]
+            })
+            with self.assertRaises(CliError) as caught:
+                import_snapshot(db, "ABCD2345", source)
+            self.assertEqual(caught.exception.code, "FULLTEXT_CONFLICT")
+            snapshot = import_snapshot(db, "ABCD2345", source, ["JKLM2345"])
+        self.assertEqual(snapshot["sourcePath"], str(source.resolve()))
+        self.assertEqual(snapshot["replaceAttachmentKeys"], ["JKLM2345"])
+        self.assertEqual(len(snapshot["expectedSha256"]), 64)
+
+    def test_import_snapshot_rejects_distillation_and_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = FakeDatabase({"ABCD2345": []})
+            distill = root / "distill.md"
+            distill.write_text("summary", encoding="utf-8")
+            with self.assertRaises(CliError) as caught:
+                import_snapshot(db, "ABCD2345", distill)
+            self.assertEqual(caught.exception.code, "INVALID_FULLTEXT_SOURCE")
+            source = root / "paper.md"
+            source.write_text("paper", encoding="utf-8")
+            link = root / "link.md"
+            link.symlink_to(source)
+            with self.assertRaises(CliError) as caught:
+                import_snapshot(db, "ABCD2345", link)
+            self.assertEqual(caught.exception.code, "FULLTEXT_FILE_MISSING")
 
     def test_migration_plan_revalidates_selected_candidate(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -267,7 +348,7 @@ class PreferredSourceTests(unittest.TestCase):
         selected = preferred_source(
             [
                 attachment("PDFONE", "storage:one.pdf"),
-                attachment("PDFTWO", "storage:two.pdf", tags=("zotero-cli:source",)),
+                attachment("PDFTWO", "storage:two.pdf", tags=("za-cli:source",)),
             ],
             Path("/tmp/zotero"),
         )

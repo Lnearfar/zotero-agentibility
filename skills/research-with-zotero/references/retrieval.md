@@ -7,7 +7,7 @@ Find candidate Literature Items, read bounded source Passages, and return ground
 1. For library discovery, check `index status`, then run an English semantic query:
 
    ```bash
-   zotero-cli --json search "stability proof" --limit 10
+   za-cli --json search "stability proof" --limit 10
    ```
 
    Search covers My Library regardless of session cwd. Use `--collection PATH` for an explicit recursive Collection scope or `--item ITEM_KEY` for several matching Passages within one paper. Search never updates implicitly. If it returns `INDEX_UNINITIALIZED`, an explicit `index update` is required before retrying; report any partial indexing errors rather than hiding missing coverage.
@@ -15,7 +15,7 @@ Find candidate Literature Items, read bounded source Passages, and return ground
 3. Read every Passage needed for the answer:
 
    ```bash
-   zotero-cli --session "$session" --json read ITEM_KEY --start LINE --limit 200
+   za-cli --session "$session" --json read ITEM_KEY --start LINE --limit 200
    ```
 
    Follow `nextStart` only as far as needed. Use `find ITEM_KEY "exact phrase" --context 8` for lexical confirmation. Use `read --all` only when the user explicitly requests the entire raw article; the Agent host may still truncate it.

@@ -9,8 +9,8 @@ from .errors import CliError
 from .http import request
 
 PROTOCOL = 1
-OPERATIONS = {"health", "fulltext_adopt"}
-PATH = "/zotero-paper-agent/v1/operation"
+OPERATIONS = {"health", "fulltext_adopt", "fulltext_import"}
+PATH = "/zotero-agentibility/v1/operation"
 _TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -131,6 +131,30 @@ class BridgeClient:
             raise CliError(
                 "WRITE_OUTCOME_UNKNOWN",
                 "Zotero returned an invalid adoption result; inspect the item before retrying",
+                details={"retryable": False},
+            )
+        return response["result"]
+
+    def fulltext_import(
+        self,
+        *,
+        session_id: str,
+        item_key: str,
+        source_path: str,
+        expected_sha256: str,
+        replace_attachment_keys: list[str],
+    ) -> dict:
+        response = self.operation("fulltext_import", {
+            "session_id": session_id,
+            "item_key": item_key,
+            "source_path": source_path,
+            "expected_sha256": expected_sha256,
+            "replace_attachment_keys": replace_attachment_keys,
+        })
+        if response.get("operation") != "fulltext_import" or not isinstance(response.get("result"), dict):
+            raise CliError(
+                "WRITE_OUTCOME_UNKNOWN",
+                "Zotero returned an invalid import result; inspect the item before retrying",
                 details={"retryable": False},
             )
         return response["result"]

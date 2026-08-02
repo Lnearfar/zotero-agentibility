@@ -3,8 +3,8 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "zotero-cli"
-version = "0.3.0"
+name = "za-cli"
+version = "0.4.0"
 description = "Local-first Linux CLI for a Zotero research library"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [project.scripts]
-zotero-cli = "zotero_cli.cli:main"
+za-cli = "za_cli.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["zotero_cli*"]
+include = ["za_cli*"]

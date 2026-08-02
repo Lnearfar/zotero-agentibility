@@ -7,7 +7,7 @@ When an existing item is reused, requested Collection Memberships and missing me
 - An identical incoming PDF is not uploaded again.
 - If no Source Document exists, the incoming PDF may become it.
 - If a Source Document exists and the incoming PDF hash differs, the item and membership are reused but the new PDF is not attached or substituted automatically. The command reports the conflict.
-- Adding or replacing PDFs does not change the canonical Markdown Full Text; only an explicit `fulltext replace` changes it.
+- Adding or replacing PDFs does not change the canonical Markdown Full Text; only an explicit `fulltext import --replace` or `fulltext adopt --replace` changes it.
 
 PDFs dragged directly into the Zotero UI bypass CLI preflight and may create Duplicate Items. Duplicate detection reports these later; merging remains explicit and moves discarded items to Trash.
 
@@ -15,6 +15,8 @@ PDFs dragged directly into the Zotero UI bypass CLI preflight and may create Dup
 
 Item merging is a dry run unless explicitly confirmed with a caller-selected keeper. It unions Collection Memberships, tags, notes, and child attachments; byte-identical PDFs collapse to one while different PDFs remain as alternatives. More than one marked Markdown Full Text blocks the merge until one is selected. Merged-away Literature Items move to Trash.
 
-## Existing Markdown
+## Markdown Full Text
+
+`fulltext import ITEM_KEY PATH --confirm` copies a reviewed local Markdown file unchanged into canonical `fulltext.md` while preserving the local source. The source must be a regular non-symlink `.md` file; `distill.md` and `probe_distill.md` are rejected. Existing canonical Full Text requires every marked attachment key to be supplied explicitly with repeatable `--replace`.
 
 `fulltext audit` reports unmarked Markdown attachment candidates, multiple candidates, missing files, and ambiguous source PDFs without changing Zotero; it never treats Zotero Notes or Annotations as candidates. `fulltext adopt ITEM_KEY MD_ATTACHMENT_KEY --confirm` explicitly copies the selected content unchanged into canonical `fulltext.md`, marks the unique Source Document, and moves the adopted source and any explicitly selected `--replace` Full Text attachments to Trash. Other Markdown attachments remain unmarked and untouched; multiple source PDFs require explicit selection.

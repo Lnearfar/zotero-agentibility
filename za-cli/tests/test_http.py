@@ -4,7 +4,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from zotero_cli.http import request
+from za_cli.http import request
 
 
 class LocalHttpTests(unittest.TestCase):
