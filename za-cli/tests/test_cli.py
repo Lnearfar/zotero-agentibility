@@ -232,6 +232,7 @@ class CliShapeTests(unittest.TestCase):
              mock.patch("za_cli.cli.token_status", return_value={"ok": True}), \
              mock.patch("za_cli.cli.BridgeClient") as bridge, \
              mock.patch("za_cli.cli.Database") as database, \
+             mock.patch("za_cli.cli._semantic_index") as semantic_index, \
              mock.patch("za_cli.cli.shutil.which", return_value="/usr/bin/tool"):
             bridge.return_value.health.return_value = {
                 "ok": True,
@@ -239,6 +240,7 @@ class CliShapeTests(unittest.TestCase):
                 "extension_version": "0.0.9",
             }
             database.return_value.schema_check.return_value = {"ok": True}
+            semantic_index.return_value.status.return_value = {}
             result = CliRunner().invoke(cli, ["--json", "app", "doctor"])
         self.assertEqual(result.exit_code, 1)
         payload = json.loads(result.stdout)

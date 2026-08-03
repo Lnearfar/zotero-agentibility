@@ -78,6 +78,25 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(item["creators"], ["Ada Lovelace"])
         self.assertEqual(self.db.attachments("ITEMONE1")[0]["tags"], ["source"])
 
+    def test_index_inventory_returns_scoped_parent_and_attachment_revisions(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("UPDATE items SET dateModified='parent-v1' WHERE key='ITEMONE1'")
+            conn.execute("UPDATE items SET dateModified='pdf-v1' WHERE key='PDFKEY33'")
+        inventory = self.db.index_inventory(["ITEMONE1"])
+        self.assertEqual([item["key"] for item in inventory], ["ITEMONE1"])
+        self.assertEqual(inventory[0]["dateModified"], "parent-v1")
+        self.assertEqual(inventory[0]["attachments"], [{
+            "itemID": 3,
+            "key": "PDFKEY33",
+            "typeName": "attachment",
+            "title": "Paper PDF",
+            "linkMode": 0,
+            "contentType": "application/pdf",
+            "attachmentPath": "storage:paper.pdf",
+            "dateModified": "pdf-v1",
+            "tags": ["source"],
+        }])
+
     def test_collection_scope_includes_descendants(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("INSERT INTO collectionItems VALUES(2,2)")

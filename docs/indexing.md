@@ -41,7 +41,7 @@ Grounded citations use `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF
 
 ## Commands and scope
 
-- `za-cli index update [--force]` scans My Library explicitly and incrementally rebuilds changed sources; `--collection PATH` or repeatable `--item KEY` provides an explicit scoped update.
+- `za-cli index update [--force]` compares a stored per-Item inventory with current Zotero revisions and source file stats, then reads, extracts, splits, and embeds only new or changed sources. `--collection PATH` or repeatable `--item KEY` provides an explicit scoped update; `--force` rebuilds the selected scope.
 - `za-cli index status` reports path, model, count, item count, source coverage, and last update without modifying the index.
 - `za-cli index inspect` exposes stored metadata and optional Passage documents for diagnosis.
 - `za-cli search QUERY` searches the active Library and returns the best Passage for each distinct Literature Item.
@@ -49,6 +49,6 @@ Grounded citations use `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF
 - `za-cli search QUERY --item ITEM_KEY` returns multiple matching Passages from one Literature Item.
 - `--filters JSON` preserves generic Chroma metadata filtering. Session cwd never scopes semantic search.
 
-A successful CLI-originated Full Text mutation rebuilds only the affected Literature Item. If rebuilding fails, the Zotero mutation remains committed and is reported with an index warning. Changes made outside this CLI are found by the next explicit `index update`.
+A successful CLI-originated Full Text mutation rebuilds only the affected Literature Item. If rebuilding fails, the Zotero mutation remains committed and is reported with an index warning. Changes made outside this CLI are found by the next explicit `index update`. Indexes created before the inventory format receive one full compatibility pass; subsequent unchanged updates perform only the cheap SQLite inventory and file-stat scan.
 
 Replacing Markdown removes obsolete chunks after the replacement chunks are prepared. Removing Markdown causes the next update to rebuild from the selected Source Document. Failed extraction or embedding does not silently erase the previous usable records.

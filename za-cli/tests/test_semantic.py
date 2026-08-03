@@ -1,3 +1,4 @@
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,8 +24,11 @@ class Collection:
     def count(self):
         return len(self.rows)
 
-    def get(self, limit=None, include=None):
-        values = list(self.rows.values())[:limit] if limit else list(self.rows.values())
+    def get(self, limit=None, offset=0, include=None, where=None):
+        values = list(self.rows.values())
+        if where:
+            values = [row for row in values if row["metadata"].get("item_key") == where["item_key"]]
+        values = values[offset : offset + limit] if limit else values[offset:]
         result = {"ids": [v["id"] for v in values], "metadatas": [v["metadata"] for v in values]}
         if include and "documents" in include:
             result["documents"] = [v["document"] for v in values]
@@ -57,11 +61,18 @@ class Collection:
 class DB:
     def __init__(self, items):
         self.items = items
+        self.lookup_calls = []
 
-    def all_literature_keys(self):
-        return list(self.items)
+    def index_inventory(self, item_keys=None):
+        keys = list(self.items) if item_keys is None else list(item_keys)
+        return [{
+            "key": key,
+            "dateModified": self.items[key].get("dateModified", ""),
+            "attachments": [{"key": "EFGH5678", "dateModified": "", "typeName": "attachment"}],
+        } for key in keys if key in self.items]
 
     def lookup(self, key):
+        self.lookup_calls.append(key)
         return self.items[key]
 
 
@@ -81,7 +92,7 @@ class SemanticTests(unittest.TestCase):
 
     def update(self, *, kind="markdown", item_keys=None):
         source = {"kind": kind, "attachmentKey": "EFGH5678", "path": str(self.source), "exists": True}
-        with patch("za_cli.semantic.sources.resolve_for_item", return_value=source), patch(
+        with patch("za_cli.semantic.sources.preferred_source", return_value=source), patch(
             "za_cli.semantic.sources.read_source",
             side_effect=lambda source, **kwargs: {"content": self.source.read_text(encoding="utf-8")},
         ):
@@ -118,14 +129,80 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(metadata["page_end"], 2)
         self.assertIn("PDF pages 1-2", metadata["location"])
 
-    def test_unchanged_skip_and_stale_chunk_deletion(self):
+    def test_unchanged_update_does_not_read_or_embed_source(self):
+        source = {"kind": "markdown", "attachmentKey": "EFGH5678", "path": str(self.source), "exists": True}
+        with patch("za_cli.semantic.sources.preferred_source", return_value=source), patch(
+            "za_cli.semantic.sources.read_source", return_value={"content": "text"}
+        ) as read_source:
+            self.index.update(self.db, self.root, item_keys=["ABCD1234"])
+            self.db.lookup_calls.clear()
+            self.embedding.calls.clear()
+            report = self.index.update(self.db, self.root, item_keys=["ABCD1234"])
+        self.assertEqual(report["unchanged"], 1)
+        self.assertEqual(self.db.lookup_calls, [])
+        self.assertEqual(self.embedding.calls, [])
+        self.assertEqual(read_source.call_count, 1)
+
+    def test_only_changed_item_is_rebuilt(self):
+        self.db.items["EFGH5678"] = {
+            "title": "B", "typeName": "book", "dateModified": "v1",
+            "fields": {}, "creators": [], "tags": [],
+        }
+        source = {"kind": "markdown", "attachmentKey": "EFGH5678", "path": str(self.source), "exists": True}
+        with patch("za_cli.semantic.sources.preferred_source", return_value=source), patch(
+            "za_cli.semantic.sources.read_source", return_value={"content": "text"}
+        ) as read_source:
+            self.index.update(self.db, self.root)
+            self.db.lookup_calls.clear()
+            self.embedding.calls.clear()
+            read_source.reset_mock()
+            self.db.items["EFGH5678"]["dateModified"] = "v2"
+            report = self.index.update(self.db, self.root)
+        self.assertEqual((report["updated"], report["unchanged"]), (1, 1))
+        self.assertEqual(self.db.lookup_calls, ["EFGH5678"])
+        self.assertEqual(read_source.call_count, 1)
+        self.assertEqual(len(self.embedding.calls), 1)
+
+    def test_pdf_passages_are_replaced_when_markdown_becomes_preferred(self):
+        current = {"kind": "pdf", "attachmentKey": "PDFKEY33"}
+
+        def source(_attachments, _data_dir):
+            return {**current, "path": str(self.source), "exists": True}
+
+        with patch("za_cli.semantic.sources.preferred_source", side_effect=source), patch(
+            "za_cli.semantic.sources.read_source",
+            side_effect=lambda _source, **_kwargs: {"content": self.source.read_text(encoding="utf-8")},
+        ):
+            self.source.write_text("pdf " * 600, encoding="utf-8")
+            self.index.update(self.db, self.root)
+            self.assertGreater(len(self.collection.rows), 1)
+            current.update(kind="markdown", attachmentKey="MARKDOWN")
+            self.source.write_text("markdown text", encoding="utf-8")
+            report = self.index.update(self.db, self.root)
+        self.assertEqual(report["updated"], 1)
+        self.assertGreater(report["removed_passages"], 0)
+        self.assertEqual(set(self.collection.rows), {"ABCD1234#0"})
+        metadata = self.collection.rows["ABCD1234#0"]["metadata"]
+        self.assertEqual((metadata["source_kind"], metadata["attachment_key"]), ("markdown", "MARKDOWN"))
+
+    def test_failed_rebuild_keeps_old_passages_and_retries(self):
+        self.update()
+        before = copy.deepcopy(self.collection.rows)
+        self.source.write_text("changed text", encoding="utf-8")
+        source = {"kind": "markdown", "attachmentKey": "EFGH5678", "path": str(self.source), "exists": True}
+        with patch("za_cli.semantic.sources.preferred_source", return_value=source), patch(
+            "za_cli.semantic.sources.read_source", side_effect=RuntimeError("extract failed")
+        ):
+            failed = self.index.update(self.db, self.root)
+        self.assertEqual(len(failed["errors"]), 1)
+        self.assertEqual(self.collection.rows, before)
+        retried = self.update()
+        self.assertEqual(retried["updated"], 1)
+        self.assertEqual(self.collection.rows["ABCD1234#0"]["document"], "changed text")
+
+    def test_stale_chunks_are_deleted(self):
         self.source.write_text("a" * 2200, encoding="utf-8")
-        first = self.update()
-        calls = len(self.embedding.calls)
-        second = self.update()
-        self.assertEqual(first["indexed"], 1)
-        self.assertEqual(second["unchanged"], 1)
-        self.assertEqual(len(self.embedding.calls), calls)
+        self.update()
         self.source.write_text("short", encoding="utf-8")
         report = self.update()
         self.assertEqual(report["updated"], 1)

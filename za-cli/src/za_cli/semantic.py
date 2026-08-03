@@ -24,6 +24,7 @@ OVERLAP = 200
 SNIPPET_WIDTH = 320
 COLLECTION_NAME = "passages"
 _BATCH_SIZE = 100
+_INVENTORY_VERSION = 1
 
 
 def default_index_path(data_dir: Path) -> Path:
@@ -184,6 +185,24 @@ def _update_lock(path: Path):
             handle.close()
 
 
+def _source_signature(item: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    path = Path(str(source.get("path") or ""))
+    if not source.get("exists") or path.is_symlink() or not path.is_file():
+        raise CliError("SOURCE_MISSING", f"Preferred source file is missing: {source.get('attachmentKey')}")
+    stat = path.stat()
+    attachment = next((value for value in item["attachments"] if value["key"] == source.get("attachmentKey")), {})
+    return {
+        "item_modified": str(item.get("dateModified") or ""),
+        "source_kind": str(source.get("kind") or ""),
+        "attachment_key": str(source.get("attachmentKey") or ""),
+        "attachment_modified": str(attachment.get("dateModified") or ""),
+        "path": str(path.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "ctime_ns": stat.st_ctime_ns,
+    }
+
+
 class SemanticIndex:
     def __init__(self, index_path: Path, *, client=None, collection=None, embedding_function=None):
         self.index_path = Path(index_path).expanduser().resolve()
@@ -230,13 +249,16 @@ class SemanticIndex:
         collection = self._open()
         if collection is None:
             return []
-        try:
-            result = collection.get(include=["metadatas"])
-        except TypeError:
-            result = collection.get()
-        ids = result.get("ids", []) or []
-        metadatas = result.get("metadatas", []) or []
-        return [{"id": item_id, "metadata": metadata or {}} for item_id, metadata in zip(ids, metadatas)]
+        rows = []
+        offset = 0
+        while True:
+            result = collection.get(limit=5000, offset=offset, include=["metadatas"])
+            ids = result.get("ids", []) or []
+            metadatas = result.get("metadatas", []) or []
+            rows.extend({"id": item_id, "metadata": metadata or {}} for item_id, metadata in zip(ids, metadatas))
+            if len(ids) < 5000:
+                return rows
+            offset += len(ids)
 
     def _state(self) -> dict[str, Any]:
         try:
@@ -244,7 +266,8 @@ class SemanticIndex:
         except (FileNotFoundError, OSError, json.JSONDecodeError):
             return {}
 
-    def _save_state(self, report: dict[str, Any]) -> None:
+    def _save_state(self, report: dict[str, Any], inventory: dict[str, Any] | None = None,
+                    inventory_complete: bool = False) -> None:
         state = self._state()
         state.update({
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -252,6 +275,10 @@ class SemanticIndex:
             "scope": report.get("scope"),
             "report": {key: value for key, value in report.items() if key != "errors"},
         })
+        if inventory is not None:
+            state["inventory"] = {
+                "version": _INVENTORY_VERSION, "complete": inventory_complete, "items": inventory,
+            }
         if report.get("scope") == "library" or int(report.get("total", 0)) > 1:
             state["last_bulk_update"] = {
                 "updated_at": state["updated_at"],
@@ -273,8 +300,14 @@ class SemanticIndex:
             return list(function.embed_documents(texts))
         return list(function(texts))
 
+    def _item_rows(self, item_key: str) -> list[dict[str, Any]]:
+        result = self.collection.get(where={"item_key": item_key}, include=["metadatas"])
+        ids = result.get("ids", []) or []
+        metadatas = result.get("metadatas", []) or []
+        return [{"id": row_id, "metadata": metadata or {}} for row_id, metadata in zip(ids, metadatas)]
+
     def _delete_item(self, item_key: str, rows: list[dict[str, Any]] | None = None) -> int:
-        ids = [row["id"] for row in (rows or self._rows()) if row["metadata"].get("item_key") == item_key]
+        ids = [row["id"] for row in (self._item_rows(item_key) if rows is None else rows)]
         if not ids:
             return 0
         try:
@@ -283,8 +316,7 @@ class SemanticIndex:
             self.collection.delete(where={"item_key": item_key})
         return len(ids)
 
-    def _prepare(self, db, item_key: str, item: dict[str, Any], data_dir: Path) -> tuple[list[dict[str, Any]], str, bool]:
-        source = sources.resolve_for_item(db, item_key, data_dir)
+    def _prepare(self, item_key: str, item: dict[str, Any], source: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
         path = Path(source["path"])
         content_sha256 = _sha256_file(path)
         read = sources.read_source(source, start=1, limit=10**9, all_text=True)
@@ -327,42 +359,50 @@ class SemanticIndex:
                 "metadata": {key: _scalar(value) for key, value in metadata.items()},
                 "embedding_text": _embedding_text(item, passage, include_metadata=index == 0),
             })
-        return records, fingerprint, bool(read.get("partial", False))
+        return records, bool(read.get("partial", False))
 
     def update(self, db, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None,
                show_progress: bool = False) -> dict[str, Any]:
-        keys = list(item_keys) if item_keys is not None else list(db.all_literature_keys())
         scoped = item_keys is not None
-        if show_progress:
-            print(f"Updating semantic index: 0/{len(keys)}", end="", file=sys.stderr, flush=True)
+        requested = list(item_keys) if scoped else None
         with _update_lock(self.index_path / "update.lock"):
             self._open(create=True)
-            existing = self._rows()
-            by_item: dict[str, list[dict[str, Any]]] = {}
-            for row in existing:
-                key = row["metadata"].get("item_key")
-                if key:
-                    by_item.setdefault(str(key), []).append(row)
-            report = {"scope": "items" if scoped else "library", "total": len(keys),
+            state_inventory = self._state().get("inventory")
+            inventory_valid = (
+                isinstance(state_inventory, dict)
+                and state_inventory.get("version") == _INVENTORY_VERSION
+                and isinstance(state_inventory.get("items"), dict)
+            )
+            inventory = dict(state_inventory["items"]) if inventory_valid else {}
+            inventory_complete = bool(inventory_valid and state_inventory.get("complete"))
+            reconciling = not inventory_complete and not scoped
+            legacy_rows: dict[str, list[dict[str, Any]]] = {}
+            if reconciling:
+                for row in self._rows():
+                    key = row["metadata"].get("item_key")
+                    if key:
+                        legacy_rows.setdefault(str(key), []).append(row)
+                inventory.update({key: inventory.get(key) for key in legacy_rows})
+
+            catalog = db.index_inventory(requested)
+            current = {entry["key"] for entry in catalog}
+            report = {"scope": "items" if scoped else "library", "total": len(catalog),
                       "indexed": 0, "updated": 0, "unchanged": 0, "removed": 0,
                       "removed_passages": 0, "errors": [], "partial": False}
-            for completed, key in enumerate(keys, start=1):
+            if show_progress:
+                print(f"Updating semantic index: 0/{len(catalog)}", end="", file=sys.stderr, flush=True)
+            for completed, entry in enumerate(catalog, start=1):
+                key = entry["key"]
                 try:
-                    item = dict(db.lookup(key))
-                    records, fingerprint, partial = self._prepare(db, key, item, Path(data_dir))
-                    old = by_item.get(key, [])
-                    old_fingerprints = {row["metadata"].get("fingerprint") for row in old}
-                    old_hashes = {row["metadata"].get("content_sha256") for row in old}
-                    unchanged = bool(old) and not force and len(old) == len(records) and (
-                        fingerprint in old_fingerprints or (
-                            None in old_fingerprints
-                            and records[0]["metadata"]["content_sha256"] in old_hashes
-                        )
-                    )
-                    if unchanged:
+                    source = sources.preferred_source(entry["attachments"], Path(data_dir))
+                    signature = _source_signature(entry, source)
+                    if not force and inventory.get(key) == signature:
                         report["unchanged"] += 1
                         continue
 
+                    item = dict(db.lookup(key))
+                    records, partial = self._prepare(key, item, source)
+                    old = legacy_rows.get(key, []) if reconciling else self._item_rows(key)
                     embeddings = []
                     for offset in range(0, len(records), _BATCH_SIZE):
                         batch_embeddings = self._embed([
@@ -389,6 +429,7 @@ class SemanticIndex:
                     if stale_ids:
                         self.collection.delete(ids=stale_ids)
                         report["removed_passages"] += len(stale_ids)
+                    inventory[key] = signature
                     report["updated" if old else "indexed"] += 1
                     report["partial"] = report["partial"] or partial
                 except Exception as exc:
@@ -400,16 +441,24 @@ class SemanticIndex:
                     report["partial"] = True
                 finally:
                     if show_progress:
-                        print(f"\rUpdating semantic index: {completed}/{len(keys)}", end="", file=sys.stderr, flush=True)
+                        print(f"\rUpdating semantic index: {completed}/{len(catalog)}", end="", file=sys.stderr, flush=True)
             if show_progress:
                 print(file=sys.stderr)
             if not scoped:
-                current = set(keys)
-                for key in set(by_item) - current:
-                    removed = self._delete_item(key, by_item[key])
-                    report["removed"] += 1
-                    report["removed_passages"] += removed
-            self._save_state(report)
+                for key in (set(legacy_rows) | set(inventory)) - current:
+                    try:
+                        removed = self._delete_item(key, legacy_rows.get(key) if reconciling else None)
+                        inventory.pop(key, None)
+                        report["removed"] += 1
+                        report["removed_passages"] += removed
+                    except Exception as exc:
+                        report["errors"].append({
+                            "item_key": key,
+                            "code": getattr(exc, "code", "INDEX_WRITE_FAILED"),
+                            "error": str(exc),
+                        })
+                        report["partial"] = True
+            self._save_state(report, inventory, inventory_complete or not scoped)
             return report
 
     def search(self, query: str, *, limit: int = 10, filters: dict[str, Any] | None = None,

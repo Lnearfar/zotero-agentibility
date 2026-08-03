@@ -4,7 +4,7 @@ Find candidate Literature Items, read bounded source Passages, and return ground
 
 ## Workflow
 
-1. Before the first semantic search in each conversation, refresh once; do not delegate this to the user:
+1. Before the first semantic search in each conversation, refresh once; tell the user before starting an unscoped library refresh because a first compatibility pass or many changed sources can take time, but do not delegate the command to the user:
 
    ```bash
    za-cli --json index status
