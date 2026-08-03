@@ -1,12 +1,12 @@
 {
   "manifest_version": 2,
   "name": "Zotero-Agentibility Bridge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-agentibility",
   "applications": {
     "zotero": {
       "id": "zotero-agentibility@local",
-      "update_url": "https://127.0.0.1:1/zotero-agentibility/updates.json",
+      "update_url": "https://github.com/Lnearfar/zotero-agentibility/releases/latest/download/updates.json",
       "strict_min_version": "7.0",
       "strict_max_version": "9.*"
     }

@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "zotero-agentibility@local": {
+      "updates": [
+        {
+          "version": "0.4.1",
+          "update_link": "https://github.com/Lnearfar/zotero-agentibility/releases/download/v0.4.1/zotero-agentibility-0.4.1.xpi",
+          "update_hash": "sha256:d39da7704e2d1a8bba29b739760729caccf776bd4a3d55bc20105aacf21f6a2f",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "7.0",
+              "strict_max_version": "9.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

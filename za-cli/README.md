@@ -17,7 +17,7 @@ Set `ZOTERO_DATA_DIR` when Zotero data is not under `~/Zotero`, `ZOTERO_HTTP_POR
 
 `za-cli --help` lists every installed command with a short description. Use `za-cli COMMAND --help` or `za-cli GROUP COMMAND --help` for arguments and options.
 
-Version 0.4.0 provides:
+The current release provides:
 
 ```text
 session create/status
@@ -28,4 +28,4 @@ index update/status/inspect
 fulltext audit/adopt/import/migrate
 ```
 
-Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Full Text writes require `--confirm` and the matching authenticated Extension.
+Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Full Text writes require `--confirm` and a protocol-compatible authenticated Extension.

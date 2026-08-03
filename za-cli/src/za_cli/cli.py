@@ -238,10 +238,10 @@ def app_doctor(ctx: click.Context) -> None:
         try:
             health = BridgeClient(config.port, config.config_dir / "bridge-token").health()
             bridge = {
-                "ok": health.get("ok") is True and health.get("extension_version") == __version__,
+                "ok": health.get("ok") is True and health.get("protocol") == PROTOCOL,
                 "protocol": health.get("protocol"),
                 "extensionVersion": health.get("extension_version"),
-                "expectedVersion": __version__,
+                "cliVersion": __version__,
                 "health": health,
             }
         except CliError as exc:

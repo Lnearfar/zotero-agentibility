@@ -1,5 +1,5 @@
 /*
- * Zotero-Agentibility bridge, version 0.4.0.
+ * Zotero-Agentibility bridge.
  *
  * Derived from cli-anything-zotero's zotero-cli-bridge/bootstrap.js and
  * substantially modified: arbitrary JavaScript execution was removed and
@@ -9,7 +9,7 @@
 
 var ENDPOINT = "/zotero-agentibility/v1/operation";
 var PROTOCOL = 1;
-var VERSION = "0.4.0";
+var VERSION = null;
 var MAX_BODY_BYTES = 4096;
 var FULLTEXT_TAG = "za-cli:fulltext";
 var SOURCE_TAG = "za-cli:source";
@@ -809,8 +809,9 @@ function _loadOrCreateToken() {
   return _readToken(file);
 }
 
-function startup() {
+function startup({ version }) {
   try {
+    VERSION = version;
     bearerToken = _loadOrCreateToken();
     _installServerHooks();
 
@@ -840,6 +841,7 @@ function startup() {
 function shutdown() {
   delete Zotero.Server.Endpoints[ENDPOINT];
   _removeServerHooks();
+  VERSION = null;
   bearerToken = null;
   bridgeEndpoint = null;
   Zotero.debug("[Zotero-Agentibility] bridge endpoint removed");

@@ -226,7 +226,7 @@ class CliShapeTests(unittest.TestCase):
         ), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main(["--json", "--session", "bad/id", "session", "status"]), 1)
 
-    def test_doctor_rejects_mismatched_extension_release(self):
+    def test_doctor_accepts_different_compatible_extension_release(self):
         app = {"ready": True, "running": True, "ping": {"ok": True}, "localApi": {"ok": True}}
         with mock.patch("za_cli.cli.probes", return_value=app), \
              mock.patch("za_cli.cli.token_status", return_value={"ok": True}), \
@@ -242,9 +242,9 @@ class CliShapeTests(unittest.TestCase):
             database.return_value.schema_check.return_value = {"ok": True}
             semantic_index.return_value.status.return_value = {}
             result = CliRunner().invoke(cli, ["--json", "app", "doctor"])
-        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(result.exit_code, 0, result.output)
         payload = json.loads(result.stdout)
-        self.assertFalse(payload["data"]["checks"]["bridge"]["ok"])
+        self.assertTrue(payload["data"]["checks"]["bridge"]["ok"])
 
     def test_json_success_envelope(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(

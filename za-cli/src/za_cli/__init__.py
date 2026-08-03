@@ -1,3 +1,5 @@
 """Local-first Zotero CLI with fixed, confirmed Full Text writes."""
 
-__version__ = "0.4.0"
+from importlib.metadata import version
+
+__version__ = version("za-cli")

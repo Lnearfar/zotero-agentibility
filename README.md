@@ -87,7 +87,7 @@ Zotero libraries are built around PDFs. Humans read PDFs just fine, but LLM-base
 ## 2. Installation
 
 ### Prerequisites
-Version 0.4.0 is Linux-only and supports Zotero 7–9. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
+The current release is Linux-only and supports Zotero 7–9. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
 
 
 ### Option 1: Install from the command line
@@ -128,7 +128,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 - an Agent Skill: `research-with-zotero`;
 - a Zotero Extension: **Zotero-Agentibility Bridge**.
 
-`doctor` checks Zotero, its Local API, the matching Extension and protocol, token permissions, Poppler, the database schema, and semantic-index readability.
+`doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, and semantic-index readability.
 
 | What it touches                                                     | Purpose                                                           |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -288,6 +288,12 @@ rm -rf ~/.config/zotero-agentibility ~/.local/share/zotero-agentibility
 Removing project state does not remove Literature Items, PDFs, Markdown attachments, or Zotero's database.
 
 ## Development History
+
+### v0.4.1
+
+- Added true incremental indexing with lightweight source inventories and live progress.
+- Added Zotero Extension updates through GitHub Releases.
+- Decoupled CLI and Extension patch versions; bridge compatibility follows the protocol version.
 
 ### v0.4.0
 

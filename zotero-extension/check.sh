@@ -3,7 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$ROOT"
-XPI=${1:-build/zotero-agentibility-0.4.0.xpi}
+VERSION=$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')
+XPI=${1:-build/zotero-agentibility-$VERSION.xpi}
 
 require() {
   grep -Fq -- "$2" "$1" || {
@@ -12,13 +13,15 @@ require() {
   }
 }
 
-require manifest.json '"version": "0.4.0"'
 require manifest.json '"id": "zotero-agentibility@local"'
-require manifest.json '"update_url": "https://127.0.0.1:1/zotero-agentibility/updates.json"'
+require manifest.json '"update_url": "https://github.com/Lnearfar/zotero-agentibility/releases/latest/download/updates.json"'
 require manifest.json '"strict_min_version": "7.0"'
 require manifest.json '"strict_max_version": "9.*"'
 require bootstrap.js 'var ENDPOINT = "/zotero-agentibility/v1/operation";'
 require bootstrap.js 'var PROTOCOL = 1;'
+require bootstrap.js 'var VERSION = null;'
+require bootstrap.js 'function startup({ version })'
+require bootstrap.js 'VERSION = version;'
 require bootstrap.js 'var MAX_BODY_BYTES = 4096;'
 require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import"]);'
 require bootstrap.js 'source_path'
@@ -59,4 +62,27 @@ if [ "$actual" != "$expected" ]; then
   exit 1
 fi
 
-printf 'Static validation passed\nBuilt %s\n%s\n' "$XPI" "$actual"
+HASH=$(sha256sum "$XPI" | cut -d' ' -f1)
+cat > updates.json <<EOF
+{
+  "addons": {
+    "zotero-agentibility@local": {
+      "updates": [
+        {
+          "version": "$VERSION",
+          "update_link": "https://github.com/Lnearfar/zotero-agentibility/releases/download/v$VERSION/zotero-agentibility-$VERSION.xpi",
+          "update_hash": "sha256:$HASH",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "7.0",
+              "strict_max_version": "9.*"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+EOF
+
+printf 'Static validation passed\nBuilt %s\nUpdated updates.json\n%s\n' "$XPI" "$actual"

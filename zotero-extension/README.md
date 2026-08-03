@@ -8,7 +8,7 @@ Authenticated fixed-operation bridge for Zotero-Agentibility. Installation is ma
 make
 ```
 
-This validates the source and creates `build/zotero-agentibility-0.4.0.xpi`. Normal releases are installed through Zotero's Add-ons UI.
+This reads the version from `manifest.json`, validates the source, creates `build/zotero-agentibility-<version>.xpi`, and regenerates the hashed `updates.json`. Install version 0.4.1 through Zotero's Add-ons UI once; later releases can update automatically through GitHub Releases.
 
 ## Development install or upgrade
 
@@ -18,7 +18,8 @@ Run from the repository root after selecting the active profile listed in `~/.zo
 
 ```bash
 profile="${ZOTERO_PROFILE:?Set ZOTERO_PROFILE to the active Zotero profile directory}"
-src="$PWD/zotero-extension/build/zotero-agentibility-0.4.0.xpi"
+version=$(python3 -c 'import json; print(json.load(open("zotero-extension/manifest.json"))["version"])')
+src="$PWD/zotero-extension/build/zotero-agentibility-$version.xpi"
 dst="$profile/extensions/zotero-agentibility@local.xpi"
 
 if pgrep -x zotero >/dev/null || pgrep -x zotero-bin >/dev/null; then
@@ -36,8 +37,8 @@ mv -f -- "$tmp" "$dst"
 trap - EXIT
 ```
 
-The destination filename must exactly match the manifest ID `zotero-agentibility@local`. Do not edit `extensions.json`; Zotero discovers or upgrades the XPI on its next start. The earlier failed profile-placement attempt used a Zotero-9-incompatible manifest—the placement mechanism was not the fault. This is an explicit development shortcut, not a cross-profile end-user installer; normal automatic releases should eventually use a real HTTPS `update_url` manifest.
+The destination filename must exactly match the manifest ID `zotero-agentibility@local`. Do not edit `extensions.json`; Zotero discovers or upgrades the XPI on its next start. The earlier failed profile-placement attempt used a Zotero-9-incompatible manifest—the placement mechanism was not the fault. This profile replacement remains a development shortcut; normal releases use the manifest's GitHub `update_url` after the initial manual 0.4.1 installation.
 
 On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health` and fixed `fulltext_adopt` and `fulltext_import`; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`.
 
-Run `za-cli --json app doctor` after installing each matching release.
+Run `za-cli --json app doctor` after installation or an update; CLI and Extension patch versions may differ when bridge protocol 1 remains compatible.
