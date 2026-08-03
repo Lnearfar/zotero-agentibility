@@ -388,16 +388,10 @@ def index_update(
     for key in item_keys:
         db.lookup(key)
     selected_keys = _collection_scope(ctx, db, collection) if collection else list(item_keys) or None
-
-    def progress(completed: int, total: int) -> None:
-        click.echo(f"\rUpdating semantic index: {completed}/{total}", err=True, nl=False)
-
-    try:
-        result = _semantic_index(ctx).update(
-            db, config.data_dir, force=force, item_keys=selected_keys, progress=progress
-        )
-    finally:
-        click.echo(err=True)
+    click.echo("Updating semantic index...", err=True)
+    result = _semantic_index(ctx).update(
+        db, config.data_dir, force=force, item_keys=selected_keys
+    )
     errors = result.get("errors", [])
     emit(ctx, result, ok=not errors, code="OK" if not errors else "INDEX_PARTIAL")
     if errors:

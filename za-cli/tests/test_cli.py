@@ -67,23 +67,6 @@ class CliShapeTests(unittest.TestCase):
         )
         semantic.return_value.update.assert_not_called()
 
-    def test_index_update_keeps_json_on_stdout_and_progress_on_stderr(self):
-        report = {"total": 1, "indexed": 0, "updated": 0, "unchanged": 1, "errors": []}
-        with mock.patch("za_cli.cli._database") as database, \
-             mock.patch("za_cli.cli._semantic_index") as semantic:
-            def update(_db, _data_dir, **kwargs):
-                kwargs["progress"](0, 1)
-                kwargs["progress"](1, 1)
-                return report
-
-            semantic.return_value.update.side_effect = update
-            result = CliRunner().invoke(cli, ["--json", "index", "update"])
-        self.assertEqual(result.exit_code, 0, result.output)
-        self.assertEqual(json.loads(result.stdout)["data"], report)
-        self.assertIn("Updating semantic index: 0/1", result.stderr)
-        self.assertIn("Updating semantic index: 1/1", result.stderr)
-        database.return_value.all_literature_keys.assert_not_called()
-
     @mock.patch("za_cli.cli.BridgeClient")
     def test_fulltext_adopt_requires_confirmation_before_bridge(self, bridge):
         result = CliRunner().invoke(cli, [

@@ -79,13 +79,13 @@ class SemanticTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def update(self, *, kind="markdown", item_keys=None, progress=None):
+    def update(self, *, kind="markdown", item_keys=None):
         source = {"kind": kind, "attachmentKey": "EFGH5678", "path": str(self.source), "exists": True}
         with patch("za_cli.semantic.sources.resolve_for_item", return_value=source), patch(
             "za_cli.semantic.sources.read_source",
             side_effect=lambda source, **kwargs: {"content": self.source.read_text(encoding="utf-8")},
         ):
-            return self.index.update(self.db, self.root, item_keys=item_keys, progress=progress)
+            return self.index.update(self.db, self.root, item_keys=item_keys)
 
     def test_default_path_is_stable_and_profile_specific(self):
         first = default_index_path(self.root)
@@ -117,12 +117,6 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(metadata["page"], 1)
         self.assertEqual(metadata["page_end"], 2)
         self.assertIn("PDF pages 1-2", metadata["location"])
-
-    def test_update_reports_progress_for_every_item(self):
-        self.db.items["EFGH5678"] = {"title": "B", "typeName": "book", "fields": {}, "creators": [], "tags": []}
-        progress = []
-        self.update(progress=lambda completed, total: progress.append((completed, total)))
-        self.assertEqual(progress, [(0, 2), (1, 2), (2, 2)])
 
     def test_unchanged_skip_and_stale_chunk_deletion(self):
         self.source.write_text("a" * 2200, encoding="utf-8")
