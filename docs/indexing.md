@@ -41,7 +41,7 @@ Grounded citations use `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF
 
 ## Commands and scope
 
-- `za-cli index update [--force]` scans My Library explicitly and incrementally rebuilds changed sources; `--collection PATH` or repeatable `--item KEY` provides an explicit scoped update.
+- `za-cli index update [--force]` scans My Library explicitly and incrementally rebuilds changed sources; it reports a live item counter to stderr and emits its final result only after completion. `--collection PATH` or repeatable `--item KEY` provides an explicit scoped update.
 - `za-cli index status` reports path, model, count, item count, source coverage, and last update without modifying the index.
 - `za-cli index inspect` exposes stored metadata and optional Passage documents for diagnosis.
 - `za-cli search QUERY` searches the active Library and returns the best Passage for each distinct Literature Item.

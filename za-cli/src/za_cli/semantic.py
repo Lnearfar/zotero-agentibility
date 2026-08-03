@@ -13,7 +13,7 @@ import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from . import sources
 from .errors import CliError
@@ -328,9 +328,14 @@ class SemanticIndex:
             })
         return records, fingerprint, bool(read.get("partial", False))
 
-    def update(self, db, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None) -> dict[str, Any]:
+    def update(
+        self, db, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> dict[str, Any]:
         keys = list(item_keys) if item_keys is not None else list(db.all_literature_keys())
         scoped = item_keys is not None
+        if progress:
+            progress(0, len(keys))
         with _update_lock(self.index_path / "update.lock"):
             self._open(create=True)
             existing = self._rows()
@@ -342,7 +347,7 @@ class SemanticIndex:
             report = {"scope": "items" if scoped else "library", "total": len(keys),
                       "indexed": 0, "updated": 0, "unchanged": 0, "removed": 0,
                       "removed_passages": 0, "errors": [], "partial": False}
-            for key in keys:
+            for completed, key in enumerate(keys, start=1):
                 try:
                     item = dict(db.lookup(key))
                     records, fingerprint, partial = self._prepare(db, key, item, Path(data_dir))
@@ -394,6 +399,9 @@ class SemanticIndex:
                         "error": str(exc),
                     })
                     report["partial"] = True
+                finally:
+                    if progress:
+                        progress(completed, len(keys))
             if not scoped:
                 current = set(keys)
                 for key in set(by_item) - current:
