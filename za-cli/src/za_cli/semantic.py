@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -328,9 +329,12 @@ class SemanticIndex:
             })
         return records, fingerprint, bool(read.get("partial", False))
 
-    def update(self, db, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None) -> dict[str, Any]:
+    def update(self, db, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None,
+               show_progress: bool = False) -> dict[str, Any]:
         keys = list(item_keys) if item_keys is not None else list(db.all_literature_keys())
         scoped = item_keys is not None
+        if show_progress:
+            print(f"Updating semantic index: 0/{len(keys)}", end="", file=sys.stderr, flush=True)
         with _update_lock(self.index_path / "update.lock"):
             self._open(create=True)
             existing = self._rows()
@@ -342,7 +346,7 @@ class SemanticIndex:
             report = {"scope": "items" if scoped else "library", "total": len(keys),
                       "indexed": 0, "updated": 0, "unchanged": 0, "removed": 0,
                       "removed_passages": 0, "errors": [], "partial": False}
-            for key in keys:
+            for completed, key in enumerate(keys, start=1):
                 try:
                     item = dict(db.lookup(key))
                     records, fingerprint, partial = self._prepare(db, key, item, Path(data_dir))
@@ -394,6 +398,11 @@ class SemanticIndex:
                         "error": str(exc),
                     })
                     report["partial"] = True
+                finally:
+                    if show_progress:
+                        print(f"\rUpdating semantic index: {completed}/{len(keys)}", end="", file=sys.stderr, flush=True)
+            if show_progress:
+                print(file=sys.stderr)
             if not scoped:
                 current = set(keys)
                 for key in set(by_item) - current:
