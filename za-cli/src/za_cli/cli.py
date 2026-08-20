@@ -228,8 +228,9 @@ def app_status(ctx: click.Context) -> None:
 
 
 @app_group.command("doctor", help="Check Zotero, Extension, token, database, and Poppler.")
+@click.option("--deep", is_flag=True, help="Also reconcile cached index statistics by scanning Passage metadata.")
 @click.pass_context
-def app_doctor(ctx: click.Context) -> None:
+def app_doctor(ctx: click.Context, deep: bool) -> None:
     config = _config(ctx)
     app = probes(config.port)
     token = token_status(config.config_dir / "bridge-token")
@@ -250,7 +251,7 @@ def app_doctor(ctx: click.Context) -> None:
         bridge = {"ok": False, "protocol": None, "error": "safe token unavailable"}
     tools = {name: {"ok": bool(shutil.which(name)), "path": shutil.which(name)} for name in ("pdftotext", "pdfinfo")}
     try:
-        index = _semantic_index(ctx).status()
+        index = _semantic_index(ctx).status(deep=True) if deep else _semantic_index(ctx).status()
         index["ok"] = True
     except Exception as error:
         index = {"ok": False, "error": {"code": getattr(error, "code", "INDEX_ERROR"), "message": str(error)}}
@@ -397,10 +398,11 @@ def index_update(
         ctx.exit(1)
 
 
-@index_group.command("status", help="Show semantic index readiness and coverage.")
+@index_group.command("status", help="Show semantic index readiness and cached coverage.")
+@click.option("--deep", is_flag=True, help="Reconcile cached statistics by scanning Passage metadata.")
 @click.pass_context
-def index_status(ctx: click.Context) -> None:
-    emit(ctx, _semantic_index(ctx).status())
+def index_status(ctx: click.Context, deep: bool) -> None:
+    emit(ctx, _semantic_index(ctx).status(deep=True) if deep else _semantic_index(ctx).status())
 
 
 @index_group.command("inspect", help="Inspect indexed Passage metadata.")

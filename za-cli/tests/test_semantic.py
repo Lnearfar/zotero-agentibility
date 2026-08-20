@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from za_cli.errors import CliError
 from za_cli.semantic import SemanticIndex, default_index_path
 
 
@@ -236,6 +237,35 @@ class SemanticTests(unittest.TestCase):
         self.update()
         self.update(item_keys=["ABCD1234"])
         self.assertEqual(self.index.status()["last_bulk_update"]["total"], 2)
+
+    def test_status_uses_persisted_stats_without_scanning_passages(self):
+        self.update()
+        with patch.object(self.collection, "get", side_effect=AssertionError("status scanned passages")):
+            status = self.index.status()
+        self.assertEqual(status["count"], 1)
+        self.assertEqual(status["item_count"], 1)
+        self.assertEqual(status["source_counts"], {"markdown": 1})
+        self.assertFalse(status["stats_stale"])
+
+    def test_deep_status_scans_passages_on_request(self):
+        self.update()
+        status = self.index.status(deep=True)
+        self.assertEqual(status["count"], 1)
+        self.assertEqual(status["item_count"], 1)
+
+    def test_status_reports_corrupt_persisted_state(self):
+        self.index.index_path.mkdir()
+        (self.index.index_path / "state.json").write_text("{", encoding="utf-8")
+        with self.assertRaisesRegex(CliError, "Semantic index state is unreadable"):
+            self.index.status()
+
+    def test_search_returns_cached_index_freshness_without_scanning(self):
+        self.update()
+        with patch.object(self.index, "_rows", side_effect=AssertionError("search scanned passages")):
+            result = self.index.search("text")
+        self.assertEqual(result["index"]["last_updated"], self.index._state()["updated_at"])
+        self.assertFalse(result["index"]["refreshing"])
+        self.assertIn("possibly_stale", result["index"])
 
     def test_search_never_updates(self):
         self.update()

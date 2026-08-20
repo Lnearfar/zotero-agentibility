@@ -25,7 +25,7 @@ These are earlier project decisions, not reduced search behavior:
 - The index is fresh and profile-specific under `~/.local/share/zotero-agentibility/index/<zotero-profile>/`; the existing `~/.config/zotero-mcp/chroma_db` is never read, changed, or migrated.
 - Only Chroma's local ONNX MiniLM embedding is supported. Cloud embeddings, OpenAI Batch, query translation, and sending paper text off-machine are prohibited.
 - The installed reranker is disabled and depends on PyTorch/Transformers; it is not part of the ONNX-only runtime selected for this project.
-- Updating is explicit. There is no startup/pre-search update, watcher, daemon, or scheduled refresh.
+- Updating is explicit. Foreground retrieval uses the existing index immediately; there is no startup/pre-search update, watcher, daemon, or scheduled refresh.
 - The CLI reads the active local My Library through immutable SQLite and local attachment files; it does not silently fall back to a remote Zotero API. Zotero Desktop must still be running, as required project-wide; “local-only” does not mean offline SQLite operation.
 
 ## Passage and metadata contract
@@ -42,9 +42,10 @@ Grounded citations use `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF
 ## Commands and scope
 
 - `za-cli index update [--force]` compares a stored per-Item inventory with current Zotero revisions and source file stats, then reads, extracts, splits, and embeds only new or changed sources. `--collection PATH` or repeatable `--item KEY` provides an explicit scoped update; `--force` rebuilds the selected scope.
-- `za-cli index status` reports path, model, count, item count, source coverage, and last update without modifying the index.
+- `za-cli index status` reads persisted readiness, freshness, and coverage statistics without opening or traversing Chroma. Legacy state may report `stats_stale` until the next update or explicit `index status --deep` reconciliation.
+- `za-cli index status --deep` traverses Passage metadata, refreshes persisted statistics, and is reserved for explicit diagnosis rather than agent startup.
 - `za-cli index inspect` exposes stored metadata and optional Passage documents for diagnosis.
-- `za-cli search QUERY` searches the active Library and returns the best Passage for each distinct Literature Item.
+- `za-cli search QUERY` searches the active Library and returns the best Passage for each distinct Literature Item plus cached `index` freshness metadata. Reading freshness never triggers maintenance or a Passage traversal; `possibly_stale` remains true until dirty tracking can account for external Zotero changes.
 - `za-cli search QUERY --collection PATH` restricts results to that Collection and descendants.
 - `za-cli search QUERY --item ITEM_KEY` returns multiple matching Passages from one Literature Item.
 - `--filters JSON` preserves generic Chroma metadata filtering. Session cwd never scopes semantic search.

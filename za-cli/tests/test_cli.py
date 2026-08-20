@@ -68,6 +68,16 @@ class CliShapeTests(unittest.TestCase):
         )
         semantic.return_value.update.assert_not_called()
 
+    def test_index_status_scans_only_with_deep_flag(self):
+        with mock.patch("za_cli.cli._semantic_index") as semantic:
+            semantic.return_value.status.return_value = {"initialized": True}
+            quick = CliRunner().invoke(cli, ["--json", "index", "status"])
+            semantic.return_value.status.assert_called_once_with()
+            semantic.return_value.status.reset_mock()
+            deep = CliRunner().invoke(cli, ["--json", "index", "status", "--deep"])
+            semantic.return_value.status.assert_called_once_with(deep=True)
+        self.assertEqual((quick.exit_code, deep.exit_code), (0, 0))
+
     @mock.patch("za_cli.cli.BridgeClient")
     def test_metadata_resolve_requires_confirmation_before_bridge(self, bridge):
         result = CliRunner().invoke(cli, [
@@ -282,6 +292,7 @@ class CliShapeTests(unittest.TestCase):
             semantic_index.return_value.status.return_value = {}
             result = CliRunner().invoke(cli, ["--json", "app", "doctor"])
         self.assertEqual(result.exit_code, 0, result.output)
+        semantic_index.return_value.status.assert_called_once_with()
         payload = json.loads(result.stdout)
         self.assertTrue(payload["data"]["checks"]["bridge"]["ok"])
 

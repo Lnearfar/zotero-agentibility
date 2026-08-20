@@ -11,17 +11,13 @@ Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it wit
 
 ## Start
 
-1. Run `za-cli --help` to verify the installed CLI and see its current commands. CLI help is authoritative for command syntax:
-   - run `za-cli COMMAND --help` for a top-level command;
-   - run `za-cli GROUP COMMAND --help` for a grouped command.
-   Do not inspect the package or invent a command when help is sufficient.
-2. Run `za-cli --json app doctor`. Stop and report the failed check if Zotero, the Extension, token permissions, protocol version, or Poppler is unavailable. Do not install components.
-3. Choose one Browsing Session ID for the whole conversation:
-   - use `ZA_CLI_SESSION` when set;
-   - otherwise use `PI_SESSION_ID` when set;
-   - otherwise run `za-cli --json session create` once and keep the returned ID.
-4. For a selected environment-provided ID, run `za-cli --session <ID> --json session status`. If and only if it returns `SESSION_NOT_FOUND`, create it with `za-cli --json session create <ID>`; stop on any other error.
-5. Pass `--session <ID>` explicitly to every session-aware command. Never rely on Zotero UI selection or a global cwd.
+Start the requested Zotero operation immediately. Do not run CLI help, `app doctor`, index status/update, or create a Browsing Session as routine preparation.
+
+- For retrieval, follow `references/retrieval.md` and search the existing index first.
+- Run command help only when needed syntax is unknown or a command rejects the attempted syntax.
+- Run `za-cli --json app doctor` only after a CLI connectivity or dependency failure. Use `app doctor --deep` only for explicit index diagnosis.
+- Create one Browsing Session only when Collection navigation or another command requires it. Prefer `ZA_CLI_SESSION`, then `PI_SESSION_ID`; create the chosen ID if status returns `SESSION_NOT_FOUND`. Pass it explicitly to session-aware commands.
+- On `INDEX_UNINITIALIZED`, run `za-cli --json index update` once before retrying search. For an explicit freshness requirement, refresh the affected Item or Collection when known; use a full update only when the changed scope is unknown.
 
 ## Workflow boundary
 
@@ -39,8 +35,8 @@ The installed CLI provides local semantic `search`, explicit index management, c
 ## Invariants
 
 - A tagged Markdown child attachment is canonical Full Text regardless of PDF changes. Zotero Notes and Annotations are never Full Text.
-- Search and read are side-effect-free. Run indexing as an explicit preceding step, never as a hidden side effect.
-- The Agent owns index freshness; never ask the user to run `index update`. Follow the refresh points in the retrieval and mutation references.
+- Search and read are side-effect-free. When initialization or explicit freshness requires indexing, run it as a separate visible command; never hide it inside search.
+- Foreground retrieval reads the existing index; maintenance is not a prerequisite for search. Never ask the user to maintain the index manually.
 - Treat search snippets as leads. Read the source Passage before making a factual claim.
 - Cite verified claims as `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF, page N]`. Never infer PDF pages for Markdown.
 - Never write `zotero.sqlite`, execute arbitrary Zotero JavaScript, permanently delete data, or write to a group library.

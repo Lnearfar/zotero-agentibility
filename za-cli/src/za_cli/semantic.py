@@ -260,21 +260,76 @@ class SemanticIndex:
                 return rows
             offset += len(ids)
 
-    def _state(self) -> dict[str, Any]:
+    def _state(self, *, strict: bool = False) -> dict[str, Any]:
         try:
             return json.loads((self.index_path / "state.json").read_text(encoding="utf-8"))
-        except (FileNotFoundError, OSError, json.JSONDecodeError):
+        except FileNotFoundError:
+            return {}
+        except (OSError, json.JSONDecodeError) as exc:
+            if strict:
+                raise CliError("INDEX_STATE_CORRUPT", "Semantic index state is unreadable") from exc
             return {}
 
+    @staticmethod
+    def _item_stats_from_rows(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        item_stats: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            metadata = row.get("metadata") or {}
+            key = metadata.get("item_key")
+            if not key:
+                continue
+            stats = item_stats.setdefault(str(key), {
+                "passages": 0,
+                "source_kind": str(metadata.get("source_kind") or "unknown"),
+                "partial": False,
+            })
+            stats["passages"] += 1
+            stats["partial"] = stats["partial"] or bool(metadata.get("partial"))
+        return item_stats
+
+    @staticmethod
+    def _aggregate_item_stats(item_stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        source_counts: dict[str, int] = {}
+        passages = 0
+        partial_items = 0
+        for stats in item_stats.values():
+            count = int(stats.get("passages", 0))
+            passages += count
+            source = str(stats.get("source_kind") or "unknown")
+            source_counts[source] = source_counts.get(source, 0) + count
+            if stats.get("partial"):
+                partial_items += 1
+        return {
+            "passages": passages,
+            "items": len(item_stats),
+            "source_counts": source_counts,
+            "partial_items": partial_items,
+        }
+
+    def _write_state(self, state: dict[str, Any]) -> None:
+        self.index_path.mkdir(parents=True, exist_ok=True)
+        target = self.index_path / "state.json"
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        temporary.replace(target)
+
     def _save_state(self, report: dict[str, Any], inventory: dict[str, Any] | None = None,
-                    inventory_complete: bool = False) -> None:
+                    inventory_complete: bool = False,
+                    item_stats: dict[str, dict[str, Any]] | None = None,
+                    stats_complete: bool = False) -> None:
         state = self._state()
         state.update({
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "complete": not bool(report["errors"]),
             "scope": report.get("scope"),
             "report": {key: value for key, value in report.items() if key != "errors"},
+            "stats_complete": stats_complete,
+            "initialized": bool(self._count()),
         })
+        if item_stats is not None:
+            state["item_stats"] = item_stats
+            if stats_complete:
+                state["stats"] = self._aggregate_item_stats(item_stats)
         if inventory is not None:
             state["inventory"] = {
                 "version": _INVENTORY_VERSION, "complete": inventory_complete, "items": inventory,
@@ -287,10 +342,7 @@ class SemanticIndex:
                 "total": report.get("total", 0),
                 "errors": len(report["errors"]),
             }
-        target = self.index_path / "state.json"
-        temporary = target.with_suffix(".tmp")
-        temporary.write_text(json.dumps(state, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        temporary.replace(target)
+        self._write_state(state)
 
     def _embed(self, texts: list[str]) -> list[Any] | None:
         function = self.embedding_function or getattr(self.collection, "_embedding_function", None)
@@ -367,7 +419,8 @@ class SemanticIndex:
         requested = list(item_keys) if scoped else None
         with _update_lock(self.index_path / "update.lock"):
             self._open(create=True)
-            state_inventory = self._state().get("inventory")
+            state = self._state()
+            state_inventory = state.get("inventory")
             inventory_valid = (
                 isinstance(state_inventory, dict)
                 and state_inventory.get("version") == _INVENTORY_VERSION
@@ -375,14 +428,22 @@ class SemanticIndex:
             )
             inventory = dict(state_inventory["items"]) if inventory_valid else {}
             inventory_complete = bool(inventory_valid and state_inventory.get("complete"))
+            stored_item_stats = state.get("item_stats")
+            item_stats = dict(stored_item_stats) if isinstance(stored_item_stats, dict) else {}
+            stats_complete = bool(state.get("stats_complete") and isinstance(state.get("stats"), dict))
             reconciling = not inventory_complete and not scoped
             legacy_rows: dict[str, list[dict[str, Any]]] = {}
             if reconciling:
-                for row in self._rows():
+                rows = self._rows()
+                item_stats = self._item_stats_from_rows(rows)
+                stats_complete = True
+                for row in rows:
                     key = row["metadata"].get("item_key")
                     if key:
                         legacy_rows.setdefault(str(key), []).append(row)
                 inventory.update({key: inventory.get(key) for key in legacy_rows})
+            elif not stats_complete and not scoped and self._count() == 0:
+                stats_complete = True
 
             catalog = db.index_inventory(requested)
             current = {entry["key"] for entry in catalog}
@@ -430,6 +491,11 @@ class SemanticIndex:
                         self.collection.delete(ids=stale_ids)
                         report["removed_passages"] += len(stale_ids)
                     inventory[key] = signature
+                    item_stats[key] = {
+                        "passages": len(records),
+                        "source_kind": str(source.get("kind") or "unknown"),
+                        "partial": partial,
+                    }
                     report["updated" if old else "indexed"] += 1
                     report["partial"] = report["partial"] or partial
                 except Exception as exc:
@@ -449,6 +515,7 @@ class SemanticIndex:
                     try:
                         removed = self._delete_item(key, legacy_rows.get(key) if reconciling else None)
                         inventory.pop(key, None)
+                        item_stats.pop(key, None)
                         report["removed"] += 1
                         report["removed_passages"] += removed
                     except Exception as exc:
@@ -458,8 +525,28 @@ class SemanticIndex:
                             "error": str(exc),
                         })
                         report["partial"] = True
-            self._save_state(report, inventory, inventory_complete or not scoped)
+                if not stats_complete:
+                    item_stats = self._item_stats_from_rows(self._rows())
+                    stats_complete = True
+            self._save_state(
+                report,
+                inventory,
+                inventory_complete or not scoped,
+                item_stats,
+                stats_complete,
+            )
             return report
+
+    def _freshness(self) -> dict[str, Any]:
+        state = self._state()
+        refresh = state.get("refresh") if isinstance(state.get("refresh"), dict) else {}
+        return {
+            "last_updated": state.get("updated_at"),
+            "last_reconcile": state.get("last_reconcile"),
+            "refreshing": refresh.get("state") == "running",
+            # Until dirty tracking exists, external Zotero changes cannot be ruled out.
+            "possibly_stale": bool(state.get("possibly_stale", True)),
+        }
 
     def search(self, query: str, *, limit: int = 10, filters: dict[str, Any] | None = None,
                item_keys: Iterable[str] | None = None, item_scope: bool = False) -> dict[str, Any]:
@@ -474,7 +561,8 @@ class SemanticIndex:
             raise CliError("INVALID_FILTERS", "Semantic filters must be an object")
         scope = list(item_keys) if item_keys is not None else None
         if scope == []:
-            return {"query": query.strip(), "limit": limit, "filters": filters, "results": [], "total_found": 0}
+            return {"query": query.strip(), "limit": limit, "filters": filters,
+                    "results": [], "total_found": 0, "index": self._freshness()}
         where = _where(filters, scope)
         kwargs = {"query_texts": [query.strip()], "n_results": min(count, limit if item_scope else limit * 4),
                   "include": ["documents", "metadatas", "distances"]}
@@ -518,35 +606,48 @@ class SemanticIndex:
             "filters": filters,
             "results": hits,
             "total_found": len(hits),
+            "index": self._freshness(),
         }
 
-    def status(self) -> dict[str, Any]:
-        rows = self._rows()
-        count = len(rows)
-        item_keys = {row["metadata"].get("item_key") for row in rows if row["metadata"].get("item_key")}
-        source_counts: dict[str, int] = {}
-        partial_items = set()
-        for row in rows:
-            metadata = row["metadata"]
-            source = str(metadata.get("source_kind") or "unknown")
-            source_counts[source] = source_counts.get(source, 0) + 1
-            if metadata.get("partial"):
-                partial_items.add(metadata.get("item_key"))
-        state = self._state()
+    def status(self, *, deep: bool = False) -> dict[str, Any]:
+        state = self._state(strict=True)
+        if deep:
+            with _update_lock(self.index_path / "update.lock"):
+                state = self._state(strict=True)
+                item_stats = self._item_stats_from_rows(self._rows())
+                stats = self._aggregate_item_stats(item_stats)
+                state.update({
+                    "initialized": bool(stats["passages"]),
+                    "item_stats": item_stats,
+                    "stats": stats,
+                    "stats_complete": True,
+                    "last_deep_status": datetime.now(timezone.utc).isoformat(),
+                })
+                self._write_state(state)
+        else:
+            stats = state.get("stats") if isinstance(state.get("stats"), dict) else {}
+
+        initialized = bool(state.get("initialized"))
+        if "initialized" not in state:
+            inventory = state.get("inventory") or {}
+            initialized = bool(inventory.get("items"))
+        stats_complete = bool(state.get("stats_complete") and stats)
         info = {
             "name": COLLECTION_NAME,
-            "count": count,
-            "item_count": len(item_keys),
+            "count": stats.get("passages"),
+            "item_count": stats.get("items"),
             "embedding_model": "all-MiniLM-L6-v2",
             "persist_directory": str(self.index_path),
-            "source_counts": source_counts,
-            "partial_items": len(partial_items - {None}),
+            "source_counts": stats.get("source_counts", {}),
+            "partial_items": stats.get("partial_items"),
+            "stats_stale": not stats_complete,
             "last_update": state.get("updated_at"),
             "last_update_complete": state.get("complete"),
             "last_update_scope": state.get("scope"),
             "last_bulk_update": state.get("last_bulk_update"),
+            "last_deep_status": state.get("last_deep_status"),
         }
-        return {"collection_info": info, **info, "path": str(self.index_path), "initialized": bool(count)}
+        return {"collection_info": info, **info, "path": str(self.index_path), "initialized": initialized}
 
     def inspect(self, *, limit: int = 20, filter_text: str | None = None,
                 show_documents: bool = False, stats: bool = False) -> dict[str, Any]:

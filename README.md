@@ -128,7 +128,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 - an Agent Skill: `research-with-zotero`;
 - a Zotero Extension: **Zotero-Agentibility Bridge**.
 
-`doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, and semantic-index readability.
+`doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, and cached semantic-index state. `doctor --deep` performs the expensive Passage-statistics reconciliation only for explicit diagnosis.
 
 | What it touches                                                     | Purpose                                                           |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -164,32 +164,19 @@ A development build can be installed without UI automation by closing Zotero and
 
 ## Getting Started
 
-1. Confirm the local stack:
+1. Search the existing index immediately, then inspect and verify a candidate:
 
    ```bash
-   za-cli --json app doctor
-   ```
-
-2. Build or refresh the index explicitly. Search won't update the index for you:
-
-   ```bash
-   za-cli --json index update
-   # Or limit the work:
-   za-cli --json index update --collection "/My Library/Project"
-   za-cli --json index update --item ITEM_KEY
-   ```
-
-3. Discover papers, then inspect and verify a candidate:
-
-   ```bash
-   za-cli --json search "stability proof" --limit 10
+   za-cli --json search "stability proof" --limit 5
    za-cli --json lookup ITEM_KEY
    za-cli --json source ITEM_KEY
    za-cli --json read ITEM_KEY --start 1 --limit 200
    za-cli --json find ITEM_KEY "exact phrase" --context 8
    ```
 
-4. Create one Browsing Session when Collection navigation matters:
+   If search reports `INDEX_UNINITIALIZED`, initialize once with `za-cli --json index update`. Refresh a known Item or Collection only when newly synchronized content is required.
+
+2. Create one Browsing Session only when Collection navigation matters:
 
    ```bash
    session="${ZA_CLI_SESSION:-${PI_SESSION_ID:-research-1}}"
@@ -205,7 +192,7 @@ Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-re
 
 | Command                       | Behavior                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
-| `app doctor`                  | Validate the local application, bridge, tools, schema, versions, and index           |
+| `app doctor [--deep]`         | Validate the local stack from cached state; optionally reconcile index statistics   |
 | `session create/status`       | Manage independent per-agent navigation state                                        |
 | `pwd`, `cd`, `ls`             | Navigate Collection paths without using Zotero UI selection                          |
 | `lookup`, `source`            | Inspect Literature Item metadata and preferred attachment                            |
