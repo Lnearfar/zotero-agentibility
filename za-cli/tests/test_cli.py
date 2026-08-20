@@ -31,6 +31,7 @@ class CliShapeTests(unittest.TestCase):
             "index     Update and inspect the local semantic Passage index.",
             "lookup    Show metadata for a Literature Item.",
             "ls        List child Collections and Literature Items.",
+            "resolve   Create a verified parent item for a standalone PDF or EPUB.",
             "pwd       Show this session's current Collection path.",
             "read      Read bounded lines from the selected Full Text source.",
             "search    Search indexed Passages by semantic similarity.",
@@ -66,6 +67,44 @@ class CliShapeTests(unittest.TestCase):
             item_keys=["ABCD2345"], item_scope=True,
         )
         semantic.return_value.update.assert_not_called()
+
+    @mock.patch("za_cli.cli.BridgeClient")
+    def test_metadata_resolve_requires_confirmation_before_bridge(self, bridge):
+        result = CliRunner().invoke(cli, [
+            "--json", "--session", "agent-1", "resolve", "KUS9YXK3",
+        ])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertEqual(json.loads(result.stderr)["code"], "CONFIRMATION_REQUIRED")
+        bridge.assert_not_called()
+
+    def test_confirmed_metadata_resolve_sends_reviewed_snapshot(self):
+        snapshot = {
+            "attachmentKey": "KUS9YXK3",
+            "expectedPath": "/tmp/book.pdf",
+            "expectedSha256": "b" * 64,
+            "markdownPath": "/tmp/book.md",
+            "markdownSha256": "c" * 64,
+        }
+        with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
+             mock.patch("za_cli.cli._database"), \
+             mock.patch("za_cli.cli.sources.metadata_resolution_snapshot", return_value=snapshot), \
+             mock.patch("za_cli.cli.BridgeClient") as bridge:
+            bridge.return_value.metadata_resolve.return_value = {
+                "attachment_key": "KUS9YXK3", "parent_item_key": "PARENT44", "resolution": "native"
+            }
+            result = CliRunner().invoke(cli, [
+                "--json", "--session", "agent-1", "resolve", "KUS9YXK3",
+                "--markdown", "/tmp/book.md", "--confirm",
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        bridge.return_value.metadata_resolve.assert_called_once_with(
+            session_id="agent-1",
+            attachment_key="KUS9YXK3",
+            expected_path="/tmp/book.pdf",
+            expected_sha256="b" * 64,
+            markdown_path="/tmp/book.md",
+            markdown_sha256="c" * 64,
+        )
 
     @mock.patch("za_cli.cli.BridgeClient")
     def test_fulltext_adopt_requires_confirmation_before_bridge(self, bridge):

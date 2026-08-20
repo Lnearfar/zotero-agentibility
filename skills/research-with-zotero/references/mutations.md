@@ -1,6 +1,6 @@
 # Mutations
 
-Version 0.4.0 writes only through `fulltext import`, `fulltext adopt`, and `fulltext migrate`. For additions, metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
+Writes are limited to `resolve`, `fulltext import`, `fulltext adopt`, and `fulltext migrate`. For general additions, arbitrary metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
 
 ## Rules
 
@@ -11,6 +11,10 @@ Version 0.4.0 writes only through `fulltext import`, `fulltext adopt`, and `full
 - Reuse an existing item only on exact Item Key, normalized DOI/arXiv/PMID/ISBN, or identical source SHA-256. Similar metadata is review-only.
 - Local `add file PATH` must not create an unidentified standalone PDF. Use explicit `--lookup` for network metadata or `--parent ITEM_KEY` for a known item.
 - A different incoming PDF never replaces an existing Source Document automatically.
+
+## Metadata resolution
+
+For a standalone PDF or EPUB, run `resolve ATTACHMENT_KEY [--markdown PATH] --confirm` only after explicit user confirmation. It invokes Zotero's native recognizer first; reviewed Markdown is an accuracy-first fallback only when it yields one Strong Identifier and a matching translated title. On success, use the returned `parent_item_key` for any following `fulltext import`. On `METADATA_UNRESOLVED`, report the ambiguity and do not create a title-only parent manually.
 
 ## Full text
 

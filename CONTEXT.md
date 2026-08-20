@@ -12,6 +12,18 @@ _Avoid_: File, folder
 The stable Zotero identifier of one **Literature Item**, used to distinguish items whose titles may change or collide.
 _Avoid_: Title, filename, citation key
 
+**Unrecognized Document**:
+A top-level PDF or EPUB attachment that has not yet been resolved to a **Literature Item**. It may belong to Collections, but it is not a **Source Document** until metadata resolution creates or reuses a parent Literature Item.
+_Avoid_: Literature Item, Source Document, orphan PDF
+
+**Strong Identifier**:
+A normalized DOI, ISBN, arXiv ID, PMID, or ADS Bibcode that can identify a bibliographic work through Zotero's search translators. Automatic metadata resolution requires an exact, unambiguous Strong Identifier; title similarity alone is not sufficient.
+_Avoid_: Title match, filename, fuzzy match
+
+**Metadata Resolution**:
+The accuracy-first process that turns an **Unrecognized Document** into a **Literature Item** by using Zotero's native document recognizer first and an exact, unambiguous **Strong Identifier** lookup second. If neither result can be verified, the document remains unresolved rather than receiving guessed metadata.
+_Avoid_: Manual parent creation, title-only matching, best-effort guessing
+
 **Source Document**:
 The explicitly tracked original full-text representation attached to a **Literature Item**, normally a PDF. Adding another PDF attachment does not replace the Source Document.
 _Avoid_: Markdown, note, any PDF attachment

@@ -1,6 +1,6 @@
 # za-cli
 
-Linux CLI for local Zotero navigation, grounded reading, semantic Passage search, and confirmed Markdown Full Text import and adoption. Installation is documented in the repository root README.
+Linux CLI for local Zotero navigation, metadata resolution, grounded reading, semantic Passage search, and confirmed Markdown Full Text import and adoption. Installation is documented in the repository root README.
 
 ## Development
 
@@ -23,9 +23,9 @@ The current release provides:
 session create/status
 app status/doctor
 pwd  cd  ls
-lookup  source  read  find  search
+lookup  source  read  find  search  resolve
 index update/status/inspect
 fulltext audit/adopt/import/migrate
 ```
 
-Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Full Text writes require `--confirm` and a protocol-compatible authenticated Extension.
+Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Metadata and Full Text writes require `--confirm` and a protocol-compatible authenticated Extension. `resolve ATTACHMENT_KEY --markdown PATH --confirm` uses Zotero's native PDF/EPUB recognizer first and an unambiguous Strong Identifier Markdown fallback second.

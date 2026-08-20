@@ -321,6 +321,48 @@ def import_snapshot(
     }
 
 
+def metadata_resolution_snapshot(
+    db: Database,
+    attachment_key: str,
+    data_dir: Path,
+    markdown_path: Path | None = None,
+) -> dict:
+    if not _KEY.fullmatch(attachment_key):
+        raise CliError("INVALID_ITEM_KEY", "Attachment Key must be a valid Zotero key")
+    attachment = db.standalone_attachment(attachment_key)
+    path = resolve_attachment_path(attachment, data_dir)
+    content_type = str(attachment.get("contentType") or "").lower()
+    filename = path.name.lower() if path else str(attachment.get("attachmentPath") or "").lower()
+    if content_type not in {"application/pdf", "application/epub+zip"} \
+            and not filename.endswith((".pdf", ".epub")):
+        raise CliError("INVALID_DOCUMENT_SOURCE", "Metadata resolution requires a standalone PDF or EPUB")
+    if not path or not path.is_absolute() or not path.is_file() or path.is_symlink() or len(str(path)) > 2048:
+        raise CliError("SOURCE_MISSING", f"Standalone document file is missing or unsafe: {attachment_key}")
+    path = path.resolve()
+
+    reviewed_markdown = None
+    markdown_sha256 = None
+    if markdown_path is not None:
+        reviewed_markdown = markdown_path.expanduser()
+        try:
+            if reviewed_markdown.is_symlink() or not reviewed_markdown.is_file():
+                raise CliError("FULLTEXT_FILE_MISSING", "Markdown fallback is missing or unsafe")
+            reviewed_markdown = reviewed_markdown.resolve(strict=True)
+        except OSError as exc:
+            raise CliError("FULLTEXT_FILE_MISSING", "Markdown fallback is missing or unsafe") from exc
+        if reviewed_markdown.suffix.lower() != ".md" or len(str(reviewed_markdown)) > 2048:
+            raise CliError("INVALID_FULLTEXT_SOURCE", "Metadata fallback must be a bounded Markdown file")
+        markdown_sha256 = _sha256_file(reviewed_markdown)
+
+    return {
+        "attachmentKey": attachment_key,
+        "expectedPath": str(path),
+        "expectedSha256": _sha256_file(path),
+        "markdownPath": str(reviewed_markdown) if reviewed_markdown else None,
+        "markdownSha256": markdown_sha256,
+    }
+
+
 def load_migration_candidates(path: Path, db: Database, data_dir: Path) -> tuple[Path, list[dict]]:
     plan_path = path.expanduser().resolve()
     try:

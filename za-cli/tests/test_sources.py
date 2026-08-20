@@ -13,6 +13,7 @@ from za_cli.sources import (
     import_snapshot,
     lexical_find,
     load_migration_candidates,
+    metadata_resolution_snapshot,
     preferred_source,
     segment_markdown,
 )
@@ -51,6 +52,9 @@ class FakeDatabase:
 
     def attachments(self, key):
         return self._attachments[key]
+
+    def standalone_attachment(self, key):
+        return self._attachments[key][0]
 
 
 class PreferredSourceTests(unittest.TestCase):
@@ -298,6 +302,24 @@ class PreferredSourceTests(unittest.TestCase):
         self.assertEqual(snapshot["sourcePath"], str(source.resolve()))
         self.assertEqual(snapshot["replaceAttachmentKeys"], ["JKLM2345"])
         self.assertEqual(len(snapshot["expectedSha256"]), 64)
+
+    def test_metadata_resolution_snapshot_hashes_document_and_markdown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stored = root / "storage" / "KUS9YXK3"
+            stored.mkdir(parents=True)
+            pdf = stored / "book.pdf"
+            pdf.write_bytes(b"pdf")
+            markdown = root / "book.md"
+            markdown.write_text("ISBN 978-0-321-89868-5", encoding="utf-8")
+            db = FakeDatabase({
+                "KUS9YXK3": [attachment("KUS9YXK3", "storage:book.pdf")]
+            })
+            snapshot = metadata_resolution_snapshot(db, "KUS9YXK3", root, markdown)
+        self.assertEqual(snapshot["expectedPath"], str(pdf.resolve()))
+        self.assertEqual(snapshot["markdownPath"], str(markdown.resolve()))
+        self.assertEqual(len(snapshot["expectedSha256"]), 64)
+        self.assertEqual(len(snapshot["markdownSha256"]), 64)
 
     def test_import_snapshot_rejects_distillation_and_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:

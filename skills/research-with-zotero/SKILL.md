@@ -27,7 +27,7 @@ Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it wit
 
 CLI help owns installed command names, arguments, and options. This Skill owns the multi-command workflows, source-verification rules, and safety invariants below because command help cannot express them.
 
-Version 0.4.0 provides local semantic `search` and explicit `index` management. The only Zotero writes remain explicitly confirmed `fulltext import`, `fulltext adopt`, and reviewed `fulltext migrate`; ingest, merge, metadata/Collection changes, and all other mutations are unavailable.
+The installed CLI provides local semantic `search`, explicit index management, confirmed Full Text writes, and top-level `resolve` for standalone PDF/EPUB metadata. General ingest, merge, arbitrary metadata/Collection editing, and all other mutations remain unavailable.
 
 ## Route
 

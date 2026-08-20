@@ -15,6 +15,12 @@ PDFs dragged directly into the Zotero UI bypass CLI preflight and may create Dup
 
 Item merging is a dry run unless explicitly confirmed with a caller-selected keeper. It unions Collection Memberships, tags, notes, and child attachments; byte-identical PDFs collapse to one while different PDFs remain as alternatives. More than one marked Markdown Full Text blocks the merge until one is selected. Merged-away Literature Items move to Trash.
 
+## Metadata resolution
+
+`resolve ATTACHMENT_KEY --markdown PATH --confirm` turns an Unrecognized Document into a Literature Item without manual Zotero UI entry. Zotero's native PDF/EPUB recognizer runs first and must return a Strong Identifier; if it cannot, the reviewed Markdown may supply exactly one normalized DOI, ISBN, arXiv ID, PMID, or ADS Bibcode for `Zotero.Translate.Search`. ISBN-10 and its equivalent ISBN-13 count as one identity. Ambiguous identifiers, title-only records, and mismatched translated titles remain unresolved.
+
+Resolution preserves Collection Memberships, attaches the original PDF or EPUB to the resulting Literature Item, and returns the new parent Item Key. Markdown import remains a separate explicit step so a successful metadata write is not rolled back merely because Full Text import needs to be retried.
+
 ## Markdown Full Text
 
 `fulltext import ITEM_KEY PATH --confirm` copies a reviewed local Markdown file unchanged into canonical `fulltext.md` while preserving the local source. The source must be a regular non-symlink `.md` file; `distill.md` and `probe_distill.md` are rejected. Existing canonical Full Text requires every marked attachment key to be supplied explicitly with repeatable `--replace`.

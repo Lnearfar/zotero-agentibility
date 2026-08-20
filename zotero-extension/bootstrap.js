@@ -13,7 +13,7 @@ var VERSION = null;
 var MAX_BODY_BYTES = 4096;
 var FULLTEXT_TAG = "za-cli:fulltext";
 var SOURCE_TAG = "za-cli:source";
-var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import"]);
+var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import", "metadata_resolve"]);
 var bearerToken = null;
 var writeLocked = false;
 var writeWaiters = [];
@@ -128,6 +128,37 @@ function _validateFulltextArguments(args, operation) {
   return args;
 }
 
+function _validateMetadataArguments(args) {
+  var keys = ["attachment_key", "expected_path", "expected_sha256", "markdown_path",
+    "markdown_sha256", "session_id"];
+  if (!_sameKeys(args, keys)) {
+    throw _operationError("BAD_ARGUMENTS", "metadata_resolve arguments do not match the schema", 400);
+  }
+  if (!/^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/.test(args.attachment_key)) {
+    throw _operationError("BAD_ARGUMENTS", "Attachment Key must be a valid Zotero key", 400);
+  }
+  if (typeof args.session_id !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(args.session_id)
+      || args.session_id === "." || args.session_id === "..") {
+    throw _operationError("BAD_ARGUMENTS", "Session ID is invalid", 400);
+  }
+  if (typeof args.expected_path !== "string" || args.expected_path[0] !== "/"
+      || args.expected_path.length > 2048 || args.expected_path.indexOf("\0") !== -1
+      || typeof args.expected_sha256 !== "string"
+      || !/^[0-9a-f]{64}$/.test(args.expected_sha256)) {
+    throw _operationError("BAD_ARGUMENTS", "Document path or SHA-256 is invalid", 400);
+  }
+  var noMarkdown = args.markdown_path === null && args.markdown_sha256 === null;
+  var validMarkdown = typeof args.markdown_path === "string" && args.markdown_path[0] === "/"
+    && args.markdown_path.length <= 2048 && args.markdown_path.indexOf("\0") === -1
+    && args.markdown_path.toLowerCase().endsWith(".md")
+    && typeof args.markdown_sha256 === "string" && /^[0-9a-f]{64}$/.test(args.markdown_sha256);
+  if (!noMarkdown && !validMarkdown) {
+    throw _operationError("BAD_ARGUMENTS", "Markdown path and SHA-256 must both be valid or null", 400);
+  }
+  return args;
+}
+
 function _acquireWriteLock() {
   if (!writeLocked) {
     writeLocked = true;
@@ -220,6 +251,199 @@ async function _attachmentFile(item) {
       { attachment_key: item.key });
   }
   return { path: file.path, filename: file.leafName };
+}
+
+function _strongIdentifiers(text) {
+  var found = Object.create(null);
+  Zotero.Utilities.extractIdentifiers(String(text || "")).forEach(function (identifier) {
+    var kind = Object.keys(identifier)[0];
+    var value = identifier[kind];
+    if (kind === "ISBN") value = Zotero.Utilities.toISBN13(Zotero.Utilities.cleanISBN(value));
+    if (kind === "DOI") value = Zotero.Utilities.cleanDOI(value).toLowerCase();
+    if (kind === "arXiv") value = value.replace(/v\d+$/i, "");
+    var key = kind + ":" + String(value).toLowerCase();
+    var query = {};
+    query[kind] = value;
+    found[key] = { key: key, query: query };
+  });
+  return Object.keys(found).map(function (key) { return found[key]; });
+}
+
+function _candidateData(candidate) {
+  if (!candidate || typeof candidate.getField !== "function") return candidate || {};
+  function field(name) {
+    try { return candidate.getField(name) || ""; }
+    catch (error) { return ""; }
+  }
+  return { DOI: field("DOI"), ISBN: field("ISBN"), extra: field("extra"), url: field("url"), title: field("title") };
+}
+
+function _candidateIdentifierText(candidate) {
+  var data = _candidateData(candidate);
+  return [data.DOI, data.ISBN, data.extra, data.url].filter(Boolean).join("\n");
+}
+
+function _titleMatchesMarkdown(candidate, markdown) {
+  var data = _candidateData(candidate);
+  function normalize(value) {
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+  var title = normalize(data.title);
+  return title.length >= 16 && normalize(String(markdown || "").slice(0, 32768)).indexOf(title) !== -1;
+}
+
+async function _discardMetadataCandidate(candidate) {
+  try {
+    await candidate.reload(["primaryData", "childItems"], true);
+    if (candidate.getAttachments().length || candidate.getNotes().length) throw new Error("candidate gained children");
+    await Zotero.DB.executeTransaction(async function () { await candidate.erase(); });
+  }
+  catch (error) {
+    throw _operationError("ROLLBACK_FAILED", "Could not remove the rejected metadata candidate", 500,
+      false, { candidate_item_key: candidate.key, rollback_result: "failed" });
+  }
+}
+
+async function _attachMetadataCandidate(attachment, candidate, args) {
+  if (candidate.id) await candidate.loadDataType("collections");
+  await Zotero.DB.executeTransaction(async function () {
+    await attachment.reload(["primaryData", "tags", "collections"], true);
+    if (attachment.deleted || attachment.parentItemID) {
+      throw _operationError("STALE_DOCUMENT", "Standalone document changed before commit", 409);
+    }
+    var finalFile = await _attachmentFile(attachment);
+    if (finalFile.path !== args.expected_path || _sha256File(finalFile.path) !== args.expected_sha256) {
+      throw _operationError("STALE_DOCUMENT", "Standalone document changed before commit", 409);
+    }
+    attachment.getCollections().forEach(function (collectionID) { candidate.addToCollection(collectionID); });
+    await candidate.save();
+    attachment.parentID = candidate.id;
+    if (!_hasTag(attachment, SOURCE_TAG)) attachment.addTag(SOURCE_TAG, 0);
+    await attachment.save();
+  });
+}
+
+async function _translateIdentifier(identifier) {
+  var translate = new Zotero.Translate.Search();
+  translate.setIdentifier(identifier.query);
+  var translators = await translate.getTranslators();
+  if (!translators.length) return null;
+  translate.setTranslator(translators);
+  var ambiguous = false;
+  translate.setHandler("select", function (translation, items, callback) {
+    var keys = Object.keys(items || {});
+    ambiguous = keys.length !== 1;
+    callback(ambiguous ? {} : items);
+  });
+  var results = await translate.translate({ libraryID: false, saveAttachments: false });
+  if (ambiguous || results.length !== 1) return null;
+  return _strongIdentifiers(_candidateIdentifierText(results[0])).some(function (item) {
+    return item.key === identifier.key;
+  }) ? results[0] : null;
+}
+
+async function _resolveMetadata(args) {
+  var libraryID = Zotero.Libraries.userLibraryID;
+  var attachment = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, args.attachment_key);
+  if (!attachment || attachment.deleted || !attachment.isAttachment() || attachment.parentItemID
+      || attachment.libraryID !== libraryID || !attachment.isEditable()
+      || !Zotero.RecognizeDocument.canRecognize(attachment)) {
+    throw _operationError("UNRECOGNIZED_DOCUMENT_NOT_FOUND",
+      "Active standalone PDF or EPUB is missing or not writable in My Library", 404,
+      false, { attachment_key: args.attachment_key });
+  }
+  var sourceFile = await _attachmentFile(attachment);
+  if (sourceFile.path !== args.expected_path || _sha256File(sourceFile.path) !== args.expected_sha256) {
+    throw _operationError("STALE_DOCUMENT", "Standalone document changed after review", 409,
+      false, { attachment_key: attachment.key });
+  }
+
+  var markdown = null;
+  var markdownIdentifiers = [];
+  if (args.markdown_path) {
+    var markdownFile = Zotero.File.pathToFile(args.markdown_path);
+    if (!markdownFile.exists() || !markdownFile.isFile() || markdownFile.isSymlink()
+        || markdownFile.path !== args.markdown_path || markdownFile.fileSize > 50 * 1024 * 1024
+        || _sha256File(markdownFile.path) !== args.markdown_sha256) {
+      throw _operationError("STALE_MARKDOWN", "Markdown fallback changed after review", 409);
+    }
+    markdown = await Zotero.File.getContentsAsync(markdownFile.path);
+    markdownIdentifiers = _strongIdentifiers(markdown);
+  }
+
+  var nativeParent = null;
+  try {
+    nativeParent = await Zotero.RecognizeDocument._recognize(attachment);
+  }
+  catch (error) {
+    Zotero.debug("[Zotero-Agentibility] native metadata recognition did not resolve " + attachment.key);
+  }
+  if (nativeParent) {
+    if (_strongIdentifiers(_candidateIdentifierText(nativeParent)).length) {
+      try {
+        await _attachMetadataCandidate(attachment, nativeParent, args);
+      }
+      catch (error) {
+        await _discardMetadataCandidate(nativeParent);
+        throw error;
+      }
+      return { attachment_key: attachment.key, parent_item_key: nativeParent.key, resolution: "native" };
+    }
+    await _discardMetadataCandidate(nativeParent);
+  }
+
+  if (!markdown || markdownIdentifiers.length !== 1) {
+    throw _operationError("METADATA_UNRESOLVED",
+      "Native recognition failed and Markdown did not contain exactly one Strong Identifier", 409,
+      false, { identifier_count: markdownIdentifiers.length });
+  }
+  var translated = await _translateIdentifier(markdownIdentifiers[0]);
+  if (!translated || !_titleMatchesMarkdown(translated, markdown)) {
+    throw _operationError("METADATA_UNRESOLVED",
+      "The unique Markdown identifier did not resolve to a matching title", 409);
+  }
+
+  var candidate = new Zotero.Item();
+  candidate.libraryID = libraryID;
+  candidate.fromJSON(typeof translated.toJSON === "function" ? translated.toJSON() : translated);
+  await _attachMetadataCandidate(attachment, candidate, args);
+  return { attachment_key: attachment.key, parent_item_key: candidate.key, resolution: "markdown_identifier" };
+}
+
+async function _executeMetadataResolve(args) {
+  var auditFile = _prepareAuditFile();
+  var locked = false;
+  try {
+    await _acquireWriteLock();
+    locked = true;
+    var result;
+    try {
+      result = await _resolveMetadata(args);
+    }
+    catch (error) {
+      try {
+        _appendAudit(auditFile, args.session_id, "metadata_resolve", [args.attachment_key], "failure",
+          error.bridgeCode || "INTERNAL_ERROR");
+      }
+      catch (auditError) {
+        throw _operationError("AUDIT_LOG_FAILED", "Metadata resolution failed and audit logging also failed", 500);
+      }
+      throw error;
+    }
+    try {
+      _appendAudit(auditFile, args.session_id, "metadata_resolve",
+        [result.attachment_key, result.parent_item_key], "success", null);
+    }
+    catch (auditError) {
+      throw _operationError("AUDIT_LOG_FAILED_AFTER_WRITE",
+        "Metadata was resolved but the audit record could not be appended", 500, false,
+        { attachment_key: result.attachment_key, parent_item_key: result.parent_item_key });
+    }
+    return result;
+  }
+  finally {
+    if (locked) _releaseWriteLock();
+  }
 }
 
 function _prepareAuditFile() {
@@ -592,13 +816,18 @@ function _handleBody(handler, raw) {
 
   var args;
   try {
-    args = _validateFulltextArguments(request.arguments, request.operation);
+    args = request.operation === "metadata_resolve"
+      ? _validateMetadataArguments(request.arguments)
+      : _validateFulltextArguments(request.arguments, request.operation);
   }
   catch (error) {
     _sendOperationError(handler, error);
     return;
   }
-  _executeFulltextWrite(request.operation, args).then(function (result) {
+  var operation = request.operation === "metadata_resolve"
+    ? _executeMetadataResolve(args)
+    : _executeFulltextWrite(request.operation, args);
+  operation.then(function (result) {
     _send(handler, 200, { ok: true, protocol: PROTOCOL, operation: request.operation, result: result });
   }).catch(function (error) {
     _sendOperationError(handler, error);

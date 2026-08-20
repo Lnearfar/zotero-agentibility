@@ -78,6 +78,19 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(item["creators"], ["Ada Lovelace"])
         self.assertEqual(self.db.attachments("ITEMONE1")[0]["tags"], ["source"])
 
+    def test_standalone_attachment_excludes_parented_and_deleted_documents(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("INSERT INTO items VALUES(6,'KUS9YXK3',1,2,'','orphan-v1')")
+            conn.execute("INSERT INTO itemDataValues VALUES(6,'Standalone PDF')")
+            conn.execute("INSERT INTO itemData VALUES(6,1,6)")
+            conn.execute("INSERT INTO itemAttachments VALUES(6,NULL,0,'application/pdf','storage:orphan.pdf')")
+        self.assertEqual(self.db.standalone_attachment("KUS9YXK3")["attachmentPath"], "storage:orphan.pdf")
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("UPDATE itemAttachments SET parentItemID=1 WHERE itemID=6")
+        with self.assertRaises(CliError) as caught:
+            self.db.standalone_attachment("KUS9YXK3")
+        self.assertEqual(caught.exception.code, "UNRECOGNIZED_DOCUMENT_NOT_FOUND")
+
     def test_index_inventory_returns_scoped_parent_and_attachment_revisions(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("UPDATE items SET dateModified='parent-v1' WHERE key='ITEMONE1'")

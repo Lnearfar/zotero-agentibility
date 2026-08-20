@@ -245,6 +245,25 @@ class Database:
             )]
         return {**dict(row), "fields": fields, "creators": creators, "tags": tags, "collections": collections}
 
+    def standalone_attachment(self, attachment_key: str) -> dict:
+        with closing(connect_immutable(self.path)) as conn:
+            row = conn.execute(
+                f"""SELECT i.itemID,i.key,it.typeName,{_TITLE} AS title,a.linkMode,a.contentType,
+                    a.path AS attachmentPath,i.dateModified
+                    FROM itemAttachments a JOIN items i ON i.itemID=a.itemID
+                    JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
+                    WHERE i.key=? AND i.libraryID=? AND it.typeName='attachment'
+                    AND a.parentItemID IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=i.itemID)""",
+                (attachment_key, self.library_id()),
+            ).fetchone()
+        if not row:
+            raise CliError(
+                "UNRECOGNIZED_DOCUMENT_NOT_FOUND",
+                f"Active standalone PDF or EPUB attachment not found: {attachment_key}",
+            )
+        return dict(row)
+
     def attachments(self, item_key: str) -> list[dict]:
         with closing(connect_immutable(self.path)) as conn:
             parent = self._item_row(conn, item_key)

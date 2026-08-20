@@ -463,6 +463,47 @@ def search_command(
     emit(ctx, result)
 
 
+@cli.command("resolve", help="Create a verified parent item for a standalone PDF or EPUB.")
+@click.argument("attachment_key")
+@click.option("--markdown", "markdown_path", type=click.Path(path_type=Path), help="Reviewed Markdown fallback for identifier lookup.")
+@click.option("--confirm", is_flag=True, help="Confirm the recoverable Zotero mutation.")
+@click.pass_context
+def metadata_resolve(
+    ctx: click.Context,
+    attachment_key: str,
+    markdown_path: Path | None,
+    confirm: bool,
+) -> None:
+    if not confirm:
+        raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to resolve document metadata")
+    state = _session(ctx)
+    config = _config(ctx)
+    snapshot = sources.metadata_resolution_snapshot(
+        _database(ctx), attachment_key, config.data_dir, markdown_path
+    )
+    try:
+        result = BridgeClient(config.port, config.config_dir / "bridge-token").metadata_resolve(
+            session_id=state["id"],
+            attachment_key=snapshot["attachmentKey"],
+            expected_path=snapshot["expectedPath"],
+            expected_sha256=snapshot["expectedSha256"],
+            markdown_path=snapshot["markdownPath"],
+            markdown_sha256=snapshot["markdownSha256"],
+        )
+    except CliError as error:
+        if error.code != "AUDIT_LOG_FAILED_AFTER_WRITE":
+            raise
+        details = error.details or {}
+        emit(ctx, {
+            "attachment_key": attachment_key,
+            "parent_item_key": details.get("parent_item_key"),
+            "status": "committed_with_warning",
+            "errorCode": error.code,
+        }, ok=False, code=error.code)
+        ctx.exit(1)
+    emit(ctx, result)
+
+
 @cli.group("fulltext")
 def fulltext_group() -> None:
     """Audit, import, and safely adopt canonical Markdown Full Text."""

@@ -1,14 +1,14 @@
 # CLI shape
 
-This document defines the target interface. The current release provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `search`, `index update/status/inspect`, `fulltext audit`, `fulltext adopt`, `fulltext import`, and `fulltext migrate`; later command groups below are not yet available. The installed command reference is `za-cli --help`, with `za-cli COMMAND --help` or nested group help for arguments and options.
+This document defines the target interface. The current release provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `search`, `resolve`, `index update/status/inspect`, `fulltext audit`, `fulltext adopt`, `fulltext import`, and `fulltext migrate`; later command groups below are not yet available. The installed command reference is `za-cli --help`, with `za-cli COMMAND --help` or nested group help for arguments and options.
 
 The primary agent workflow uses top-level filesystem-style commands:
 
 ```text
-pwd  cd  ls  read  find  search  lookup  source  fulltext  index
+pwd  cd  ls  read  find  search  lookup  source  resolve  fulltext  index
 ```
 
-Planned post-v0.4 functionality derived from `cli-anything-zotero` may use groups such as `item`, `collection`, `add`, `import`, `export`, `note`, `tag`, and `saved-search`; these groups are not currently installed. The top-level `search` command remains passage-level semantic search.
+Planned post-v0.4 functionality derived from `cli-anything-zotero` may use groups such as `item`, `collection`, `add`, `import`, `export`, `note`, `tag`, and `saved-search`; these groups are not currently installed. The top-level `search` command remains passage-level semantic search. `resolve ATTACHMENT_KEY [--markdown PATH] --confirm` resolves one standalone PDF or EPUB through Zotero's native recognizer, with an accuracy-first Strong Identifier Markdown fallback, and returns the parent Item Key for the existing `fulltext import` command.
 
 Collection navigation and mutations use an explicit Browsing Session ID. Global semantic search and index management do not inherit session cwd. The Skill prefers `ZA_CLI_SESSION`, then maps `PI_SESSION_ID`, and otherwise creates a session explicitly; it preserves that session across turns. Collection paths are navigational; Literature Items are addressed by Item Key. Canonical absolute Collection paths begin with `/My Library/`; the CLI also accepts `My Library/...` as the same absolute path, while other paths remain relative to the current Collection. Sessions store stable Collection Keys and recompute display paths. An ambiguous path fails with candidate keys, and `cd --collection KEY` resolves it explicitly; a trashed current Collection resets the session to its Library root with a warning.
 

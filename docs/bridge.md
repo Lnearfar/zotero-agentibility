@@ -18,7 +18,7 @@ Requests use a fixed-operation envelope:
 {"protocol":1,"operation":"health","arguments":{}}
 ```
 
-Bridge protocol 1 allows `health` and two write operations. `fulltext_adopt` accepts an existing Markdown child attachment:
+Bridge protocol 1 allows `health` and three fixed write operations. `fulltext_adopt` accepts an existing Markdown child attachment:
 
 ```json
 {"protocol":1,"operation":"fulltext_adopt","arguments":{"session_id":"agent-1","item_key":"ABCD2345","markdown_attachment_key":"EFGH6789","expected_path":"/home/user/Zotero/storage/EFGH6789/source.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
@@ -30,6 +30,14 @@ Bridge protocol 1 allows `health` and two write operations. `fulltext_adopt` acc
 {"protocol":1,"operation":"fulltext_import","arguments":{"session_id":"agent-1","item_key":"ABCD2345","source_path":"/home/user/converted/paper.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
 ```
 
-For adoption, the expected path remains a stale-plan guard rather than an arbitrary source: the Extension resolves the live attachment path through Zotero and requires an exact match. Import is the only operation that accepts an external path; it requires an absolute regular non-symlink `.md`, rejects distillations, revalidates the hash, and leaves the source file untouched. Both operations limit writes to active regular items in My Library, import through `Zotero.Attachments.importFromFile`, validate the copied `fulltext.md`, then tag the new attachment and move explicitly selected old attachments to Zotero Trash in a final transaction. Adoption also trashes its source attachment. A five-second bounded global lock serializes bridge writes.
+`metadata_resolve` creates a verified parent Literature Item for a standalone PDF or EPUB. It runs Zotero's native recognizer first, rejects title-only results, then optionally resolves exactly one Strong Identifier from reviewed Markdown through Zotero search translators:
+
+```json
+{"protocol":1,"operation":"metadata_resolve","arguments":{"session_id":"agent-1","attachment_key":"KUS9YXK3","expected_path":"/home/user/Zotero/storage/KUS9YXK3/book.pdf","expected_sha256":"<64 lowercase hex>","markdown_path":"/home/user/converted/book.md","markdown_sha256":"<64 lowercase hex>"}}
+```
+
+The operation preserves Collection Memberships, reparents the original attachment, and returns `parent_item_key` plus `resolution` (`native` or `markdown_identifier`). Ambiguous identifiers, title-only matches, and translator conflicts remain unresolved rather than creating guessed metadata.
+
+For adoption, the expected path remains a stale-plan guard rather than an arbitrary source: the Extension resolves the live attachment path through Zotero and requires an exact match. Import is the only operation that accepts an external path; it requires an absolute regular non-symlink `.md`, rejects distillations, revalidates the hash, and leaves the source file untouched. Both Full Text operations limit writes to active regular items in My Library, import through `Zotero.Attachments.importFromFile`, validate the copied `fulltext.md`, then tag the new attachment and move explicitly selected old attachments to Zotero Trash in a final transaction. Adoption also trashes its source attachment. A five-second bounded global lock serializes bridge writes.
 
 Every schema-valid operation that acquires the write lock is recorded without content, paths, hashes, queries, or tokens in mode-`0600` `~/.config/zotero-agentibility/audit.jsonl`; malformed requests and queue rejections make no Zotero change and are not write-log records. Missing or invalid authentication, malformed or oversized JSON, protocol mismatch, stale state, conflicts, and unknown operations fail with structured errors and no evaluation. The bridge never accepts JavaScript source or generic mutation requests.

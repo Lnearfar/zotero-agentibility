@@ -9,7 +9,7 @@ from .errors import CliError
 from .http import request
 
 PROTOCOL = 1
-OPERATIONS = {"health", "fulltext_adopt", "fulltext_import"}
+OPERATIONS = {"health", "fulltext_adopt", "fulltext_import", "metadata_resolve"}
 PATH = "/zotero-agentibility/v1/operation"
 _TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -108,6 +108,32 @@ class BridgeClient:
 
     def health(self) -> dict:
         return self.operation("health", {})
+
+    def metadata_resolve(
+        self,
+        *,
+        session_id: str,
+        attachment_key: str,
+        expected_path: str,
+        expected_sha256: str,
+        markdown_path: str | None,
+        markdown_sha256: str | None,
+    ) -> dict:
+        response = self.operation("metadata_resolve", {
+            "session_id": session_id,
+            "attachment_key": attachment_key,
+            "expected_path": expected_path,
+            "expected_sha256": expected_sha256,
+            "markdown_path": markdown_path,
+            "markdown_sha256": markdown_sha256,
+        })
+        if response.get("operation") != "metadata_resolve" or not isinstance(response.get("result"), dict):
+            raise CliError(
+                "WRITE_OUTCOME_UNKNOWN",
+                "Zotero returned an invalid metadata result; inspect the document before retrying",
+                details={"retryable": False},
+            )
+        return response["result"]
 
     def fulltext_adopt(
         self,

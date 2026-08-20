@@ -48,6 +48,38 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(result["ok"])
 
     @mock.patch("za_cli.http.urllib.request.build_opener")
+    def test_metadata_resolve_uses_fixed_authenticated_schema(self, build_opener):
+        build_opener.return_value.open.return_value = FakeResponse(
+            b'{"ok":true,"protocol":1,"operation":"metadata_resolve","result":{"parent_item_key":"PARENT44"}}'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "bridge-token"
+            token.write_text("a" * 64 + "\n", encoding="utf-8")
+            os.chmod(token, 0o600)
+            result = BridgeClient(23119, token).metadata_resolve(
+                session_id="agent-1",
+                attachment_key="KUS9YXK3",
+                expected_path="/tmp/book.pdf",
+                expected_sha256="b" * 64,
+                markdown_path="/tmp/book.md",
+                markdown_sha256="c" * 64,
+            )
+        request = build_opener.return_value.open.call_args.args[0]
+        self.assertEqual(json.loads(request.data), {
+            "protocol": 1,
+            "operation": "metadata_resolve",
+            "arguments": {
+                "session_id": "agent-1",
+                "attachment_key": "KUS9YXK3",
+                "expected_path": "/tmp/book.pdf",
+                "expected_sha256": "b" * 64,
+                "markdown_path": "/tmp/book.md",
+                "markdown_sha256": "c" * 64,
+            },
+        })
+        self.assertEqual(result["parent_item_key"], "PARENT44")
+
+    @mock.patch("za_cli.http.urllib.request.build_opener")
     def test_fulltext_adopt_uses_fixed_authenticated_schema(self, build_opener):
         build_opener.return_value.open.return_value = FakeResponse(
             b'{"ok":true,"protocol":1,"operation":"fulltext_adopt","result":{"markdown_attachment_key":"NEWW2345"}}'

@@ -212,6 +212,7 @@ Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-re
 | `read`, `find`                | Read bounded source lines or locate exact text; `read --all` emits complete raw text |
 | `index update/status/inspect` | Explicitly maintain and diagnose the profile-specific Passage index                  |
 | `search`                      | Search indexed Passages globally or within an explicit Collection/item scope         |
+| `resolve`                     | Resolve a standalone PDF/EPUB through Zotero, with optional Markdown identifier fallback |
 | `fulltext audit`              | Produce a read-only migration plan for existing Markdown attachments                 |
 | `fulltext adopt`              | Adopt a reviewed existing Markdown child attachment as canonical Full Text           |
 | `fulltext import`             | Import a reviewed local Markdown file while preserving the local source file         |
@@ -267,6 +268,7 @@ Keep CLI syntax in Click help, multi-command research rules in the Skill, and du
 - [CLI shape](docs/cli.md)
 - [Semantic indexing](docs/indexing.md)
 - [Extension bridge](docs/bridge.md)
+- [Ingest and metadata resolution](docs/ingest.md)
 - [Markdown migration](docs/migration.md)
 - [Architecture decisions](docs/adr/)
 
