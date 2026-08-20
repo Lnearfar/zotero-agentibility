@@ -54,8 +54,10 @@ class CliShapeTests(unittest.TestCase):
     def test_semantic_search_never_updates_implicitly(self):
         search_result = {"query": "stability", "results": [], "total_found": 0}
         with mock.patch("za_cli.cli._database") as database, \
-             mock.patch("za_cli.cli._semantic_index") as semantic:
+             mock.patch("za_cli.cli._semantic_index") as semantic, \
+             mock.patch("za_cli.cli._index_queue") as queue:
             semantic.return_value.search.return_value = search_result
+            queue.return_value.runtime_status.return_value = {"worker_running": False, "refreshing": False}
             result = CliRunner().invoke(cli, [
                 "--json", "search", "stability", "--item", "ABCD2345",
                 "--filters", '{"itemType":"journalArticle"}',
@@ -69,14 +71,55 @@ class CliShapeTests(unittest.TestCase):
         semantic.return_value.update.assert_not_called()
 
     def test_index_status_scans_only_with_deep_flag(self):
-        with mock.patch("za_cli.cli._semantic_index") as semantic:
+        with mock.patch("za_cli.cli._semantic_index") as semantic, \
+             mock.patch("za_cli.cli._index_queue") as queue:
             semantic.return_value.status.return_value = {"initialized": True}
+            queue.return_value.status.return_value = {"pending_items": 0}
             quick = CliRunner().invoke(cli, ["--json", "index", "status"])
             semantic.return_value.status.assert_called_once_with()
             semantic.return_value.status.reset_mock()
             deep = CliRunner().invoke(cli, ["--json", "index", "status", "--deep"])
             semantic.return_value.status.assert_called_once_with(deep=True)
         self.assertEqual((quick.exit_code, deep.exit_code), (0, 0))
+        self.assertEqual(json.loads(quick.stdout)["data"]["queue"]["pending_items"], 0)
+
+    def test_index_refresh_enqueues_without_updating(self):
+        with mock.patch("za_cli.cli._database") as database, \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli._semantic_index") as semantic:
+            database.return_value.lookup.return_value = {"key": "ABCD2345"}
+            queue.return_value.enqueue.return_value = {
+                "queued": True, "item_keys": ["ABCD2345"], "events": 1,
+            }
+            result = CliRunner().invoke(cli, [
+                "--json", "index", "refresh", "--item", "ABCD2345",
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        queue.return_value.enqueue.assert_called_once_with(["ABCD2345"], reason="explicit-refresh")
+        semantic.return_value.update.assert_not_called()
+
+    def test_index_worker_once_drains_one_batch(self):
+        with mock.patch("za_cli.cli._database") as database, \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli._semantic_index") as semantic:
+            queue.return_value.work_once.return_value = {"processed_items": 1, "report": {"errors": []}}
+            result = CliRunner().invoke(cli, ["--json", "index", "worker", "--once"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        queue.return_value.work_once.assert_called_once_with(
+            semantic.return_value, database.return_value, mock.ANY,
+        )
+
+    def test_index_worker_once_returns_nonzero_for_partial_batch(self):
+        with mock.patch("za_cli.cli._database"), \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli._semantic_index"):
+            queue.return_value.work_once.return_value = {
+                "processed_items": 1,
+                "report": {"errors": [{"item_key": "ABCD2345", "error": "failed"}]},
+            }
+            result = CliRunner().invoke(cli, ["--json", "index", "worker", "--once"])
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertEqual(json.loads(result.stdout)["code"], "INDEX_PARTIAL")
 
     @mock.patch("za_cli.cli.BridgeClient")
     def test_metadata_resolve_requires_confirmation_before_bridge(self, bridge):
@@ -144,14 +187,21 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("za_cli.cli._database"), \
              mock.patch("za_cli.cli.sources.import_snapshot", return_value=snapshot), \
-             mock.patch("za_cli.cli._update_index_after_mutation", return_value=None), \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli._semantic_index") as semantic, \
              mock.patch("za_cli.cli.BridgeClient") as bridge:
+            queue.return_value.enqueue.return_value = {
+                "queued": True, "item_keys": ["ABCD2345"], "events": 1,
+            }
             bridge.return_value.fulltext_import.return_value = {"markdown_attachment_key": "NEWW2345"}
             result = CliRunner().invoke(cli, [
                 "--json", "--session", "agent-1", "fulltext", "import", "ABCD2345", "/tmp/converted.md",
                 "--replace", "JKLM2345", "--confirm",
             ])
         self.assertEqual(result.exit_code, 0, result.output)
+        queue.return_value.enqueue.assert_called_once_with(["ABCD2345"], reason="fulltext-mutation")
+        semantic.return_value.update.assert_not_called()
+        self.assertTrue(json.loads(result.stdout)["data"]["index"]["queued"])
         bridge.return_value.fulltext_import.assert_called_once_with(
             session_id="agent-1",
             item_key="ABCD2345",
@@ -171,7 +221,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("za_cli.cli._database"), \
              mock.patch("za_cli.cli.sources.adoption_snapshot", return_value=snapshot), \
-             mock.patch("za_cli.cli._update_index_after_mutation", return_value=None), \
+             mock.patch("za_cli.cli._queue_index_after_mutation", return_value=None), \
              mock.patch("za_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.return_value = {"markdown_attachment_key": "NEWW2345"}
             result = CliRunner().invoke(cli, [
@@ -201,7 +251,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("za_cli.cli._database"), \
              mock.patch("za_cli.cli.sources.adoption_snapshot", return_value=snapshot), \
-             mock.patch("za_cli.cli._update_index_after_mutation", return_value=None), \
+             mock.patch("za_cli.cli._queue_index_after_mutation", return_value=None), \
              mock.patch("za_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.side_effect = warning
             result = CliRunner().invoke(cli, [
@@ -222,7 +272,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("za_cli.cli._database"), \
              mock.patch("za_cli.cli.sources.load_migration_candidates", return_value=(Path("/plan.json"), candidates)), \
-             mock.patch("za_cli.cli._update_index_after_mutation", return_value=None), \
+             mock.patch("za_cli.cli._queue_index_after_mutation", return_value=None), \
              mock.patch("za_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.side_effect = [
                 {"markdown_attachment_key": "STUV2345"},
@@ -246,7 +296,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
              mock.patch("za_cli.cli._database"), \
              mock.patch("za_cli.cli.sources.load_migration_candidates", return_value=(Path("/plan.json"), candidates)), \
-             mock.patch("za_cli.cli._update_index_after_mutation", return_value=None), \
+             mock.patch("za_cli.cli._queue_index_after_mutation", return_value=None), \
              mock.patch("za_cli.cli.BridgeClient") as bridge:
             bridge.return_value.fulltext_adopt.side_effect = CliError("WRITE_OUTCOME_UNKNOWN", "inspect first")
             result = CliRunner().invoke(cli, [

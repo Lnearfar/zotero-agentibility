@@ -1,6 +1,6 @@
 # CLI shape
 
-This document defines the target interface. The current release provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `search`, `resolve`, `index update/status/inspect`, `fulltext audit`, `fulltext adopt`, `fulltext import`, and `fulltext migrate`; later command groups below are not yet available. The installed command reference is `za-cli --help`, with `za-cli COMMAND --help` or nested group help for arguments and options.
+This document defines the target interface. The current release provides `session`, `app`, `pwd`, `cd`, `ls`, `lookup`, `source`, `read`, `find`, `search`, `resolve`, `index update/status/refresh/worker/inspect`, `fulltext audit`, `fulltext adopt`, `fulltext import`, and `fulltext migrate`; later command groups below are not yet available. The installed command reference is `za-cli --help`, with `za-cli COMMAND --help` or nested group help for arguments and options.
 
 The primary agent workflow uses top-level filesystem-style commands:
 
@@ -19,6 +19,8 @@ Destructive CLI operations move Zotero objects to Trash and require explicit con
 Human-readable text remains the default. Agents and scripts pass `--json` for compact, stable result envelopes; diagnostics use stderr and failures remain non-zero. `read --all` emits untruncated raw full text.
 
 `doctor` checks that Zotero is running, the shared bearer-token file has safe permissions, the Extension bridge protocol is compatible with the CLI, required Linux tools are present, and reads cached semantic-index state. `doctor --deep` additionally reconciles cached index statistics by traversing Passage metadata and is reserved for explicit diagnosis.
+
+`index refresh` only queues selected Items. `index worker --once` drains one bounded batch; `index worker` is a long-lived polling process that sleeps while idle and does not daemonize itself. Full reconciliation remains an explicit `index update` operation.
 
 `ls`, `search`, `find`, `read`, and indexing remain local. Network access occurs only for explicit DOI/arXiv/URL ingest, PDF fetching, metrics, or Zotero sync; responses identify the external source, and no command sends paper full text.
 

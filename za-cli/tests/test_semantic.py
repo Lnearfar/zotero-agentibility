@@ -219,6 +219,13 @@ class SemanticTests(unittest.TestCase):
         self.assertGreaterEqual(report["removed"], 1)
         self.assertFalse(any(row["metadata"]["item_key"] == "EFGH5678" for row in self.collection.rows.values()))
 
+    def test_scoped_update_removes_requested_deleted_item(self):
+        self.update()
+        self.db.items.pop("ABCD1234")
+        report = self.update(item_keys=["ABCD1234"])
+        self.assertEqual(report["removed"], 1)
+        self.assertEqual(self.collection.rows, {})
+
     def test_global_grouping_and_item_scope(self):
         self.source.write_text("first passage " + "x" * 1700, encoding="utf-8")
         self.update()

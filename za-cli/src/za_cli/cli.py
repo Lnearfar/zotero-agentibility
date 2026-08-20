@@ -121,18 +121,22 @@ def _semantic_index(ctx: click.Context):
     return SemanticIndex(default_index_path(config.data_dir))
 
 
-def _update_index_after_mutation(
-    ctx: click.Context, db: Database, item_key: str, semantic_index=None
-) -> dict[str, Any] | None:
-    semantic_index = semantic_index or _semantic_index(ctx)
+def _index_queue(ctx: click.Context):
+    from .index_queue import IndexQueue
+    from .semantic import default_index_path
+
+    return IndexQueue(default_index_path(_config(ctx).data_dir))
+
+
+def _queue_index_after_mutation(ctx: click.Context, item_key: str, queue=None) -> dict[str, Any]:
     try:
-        report = semantic_index.update(db, _config(ctx).data_dir, item_keys=[item_key])
-        return {"ok": not bool(report.get("errors")), "report": report}
+        result = (queue or _index_queue(ctx)).enqueue([item_key], reason="fulltext-mutation")
+        return {"ok": True, **result}
     except Exception as error:
         return {
             "ok": False,
             "error": {
-                "code": getattr(error, "code", "INDEX_UPDATE_FAILED"),
+                "code": getattr(error, "code", "INDEX_QUEUE_FAILED"),
                 "message": str(error),
             },
         }
@@ -151,10 +155,10 @@ def _run_fulltext_write(ctx: click.Context, db: Database, item_key: str, write) 
             "errorCode": error.code,
             "markdownAttachmentKey": details.get("markdown_attachment_key"),
             "trashedAttachmentKeys": details.get("trashed_attachment_keys", []),
-            "index": _update_index_after_mutation(ctx, db, item_key),
+            "index": _queue_index_after_mutation(ctx, item_key),
         }, ok=False, code=error.code)
         ctx.exit(1)
-    index_result = _update_index_after_mutation(ctx, db, item_key)
+    index_result = _queue_index_after_mutation(ctx, item_key)
     result["index"] = index_result
     if index_result is not None and not index_result["ok"]:
         result["status"] = "committed_with_index_warning"
@@ -398,11 +402,45 @@ def index_update(
         ctx.exit(1)
 
 
-@index_group.command("status", help="Show semantic index readiness and cached coverage.")
+@index_group.command("status", help="Show semantic index readiness, cached coverage, and refresh queue.")
 @click.option("--deep", is_flag=True, help="Reconcile cached statistics by scanning Passage metadata.")
 @click.pass_context
 def index_status(ctx: click.Context, deep: bool) -> None:
-    emit(ctx, _semantic_index(ctx).status(deep=True) if deep else _semantic_index(ctx).status())
+    result = _semantic_index(ctx).status(deep=True) if deep else _semantic_index(ctx).status()
+    result["queue"] = _index_queue(ctx).status()
+    emit(ctx, result)
+
+
+@index_group.command("refresh", help="Queue selected Literature Items for background indexing.")
+@click.option("--item", "item_keys", multiple=True, required=True, help="Literature Item to refresh; repeatable.")
+@click.pass_context
+def index_refresh(ctx: click.Context, item_keys: tuple[str, ...]) -> None:
+    db = _database(ctx)
+    keys = list(dict.fromkeys(item_keys))
+    for key in keys:
+        db.lookup(key)
+    emit(ctx, _index_queue(ctx).enqueue(keys, reason="explicit-refresh"))
+
+
+@index_group.command("worker", help="Process queued semantic index refreshes.")
+@click.option("--once", is_flag=True, help="Process one bounded batch and exit.")
+@click.option("--poll-seconds", default=5.0, show_default=True, type=click.FloatRange(min=0.1),
+              help="Idle polling interval for the continuous worker.")
+@click.pass_context
+def index_worker(ctx: click.Context, once: bool, poll_seconds: float) -> None:
+    config = _config(ctx)
+    queue = _index_queue(ctx)
+    semantic_index = _semantic_index(ctx)
+    db = _database(ctx)
+    if once:
+        with queue.worker():
+            result = queue.work_once(semantic_index, db, config.data_dir)
+        errors = (result.get("report") or {}).get("errors", [])
+        emit(ctx, result, ok=not errors, code="OK" if not errors else "INDEX_PARTIAL")
+        if errors:
+            ctx.exit(1)
+        return
+    queue.run(semantic_index, db, config.data_dir, poll_seconds=poll_seconds)
 
 
 @index_group.command("inspect", help="Inspect indexed Passage metadata.")
@@ -462,6 +500,8 @@ def search_command(
         item_keys=item_keys,
         item_scope=item_key is not None,
     )
+    runtime = _index_queue(ctx).runtime_status()
+    result.setdefault("index", {})["refreshing"] = runtime["refreshing"]
     emit(ctx, result)
 
 
@@ -601,7 +641,7 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
     db = _database(ctx)
     plan_path, candidates = sources.load_migration_candidates(plan, db, config.data_dir)
     bridge = BridgeClient(config.port, config.config_dir / "bridge-token")
-    semantic_index = _semantic_index(ctx)
+    queue = _index_queue(ctx)
     results = []
     succeeded = failed = warnings = unknown = rollback_failed = 0
     for candidate in candidates:
@@ -615,9 +655,7 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
                 replace_attachment_keys=candidate["replaceAttachmentKeys"],
             )
             succeeded += 1
-            index_result = _update_index_after_mutation(
-                ctx, db, candidate["itemKey"], semantic_index
-            )
+            index_result = _queue_index_after_mutation(ctx, candidate["itemKey"], queue)
             if index_result is not None and not index_result["ok"]:
                 warnings += 1
             results.append({
@@ -636,9 +674,7 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
                     "status": "committed_with_warning",
                     "errorCode": error.code,
                     "markdownAttachmentKey": (error.details or {}).get("markdown_attachment_key"),
-                    "index": _update_index_after_mutation(
-                        ctx, db, candidate["itemKey"], semantic_index
-                    ),
+                    "index": _queue_index_after_mutation(ctx, candidate["itemKey"], queue),
                 })
                 continue
             if error.code == "WRITE_OUTCOME_UNKNOWN":

@@ -24,8 +24,10 @@ session create/status
 app status/doctor
 pwd  cd  ls
 lookup  source  read  find  search  resolve
-index update/status/inspect
+index update/status/refresh/worker/inspect
 fulltext audit/adopt/import/migrate
 ```
 
 Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Metadata and Full Text writes require `--confirm` and a protocol-compatible authenticated Extension. `resolve ATTACHMENT_KEY --markdown PATH --confirm` uses Zotero's native PDF/EPUB recognizer first and an unambiguous Strong Identifier Markdown fallback second.
+
+Full Text writes queue the affected Item for semantic refresh. Run `za-cli index worker` separately as a long-lived process, or `za-cli --json index worker --once` to drain one batch. This release does not install or start a supervisor. The worker polls only the durable queue and sleeps while idle; synchronous `index update` remains available for initialization and full reconciliation.

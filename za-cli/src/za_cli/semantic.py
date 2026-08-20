@@ -450,6 +450,21 @@ class SemanticIndex:
             report = {"scope": "items" if scoped else "library", "total": len(catalog),
                       "indexed": 0, "updated": 0, "unchanged": 0, "removed": 0,
                       "removed_passages": 0, "errors": [], "partial": False}
+            if scoped:
+                for key in set(requested or []) - current:
+                    try:
+                        removed = self._delete_item(key)
+                        inventory.pop(key, None)
+                        item_stats.pop(key, None)
+                        report["removed"] += bool(removed)
+                        report["removed_passages"] += removed
+                    except Exception as exc:
+                        report["errors"].append({
+                            "item_key": key,
+                            "code": getattr(exc, "code", "INDEX_WRITE_FAILED"),
+                            "error": str(exc),
+                        })
+                        report["partial"] = True
             if show_progress:
                 print(f"Updating semantic index: 0/{len(catalog)}", end="", file=sys.stderr, flush=True)
             for completed, entry in enumerate(catalog, start=1):

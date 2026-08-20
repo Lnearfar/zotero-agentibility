@@ -11,7 +11,7 @@ Find candidate Literature Items, read bounded source Passages, and return ground
    ```
 
    Search covers My Library regardless of session cwd and returns cached index freshness metadata. `possibly_stale` is provenance, not a reason to block ordinary retrieval. Use `--collection PATH` for an explicit recursive Collection scope or `--item ITEM_KEY` for several matching Passages within one paper.
-2. If search returns `INDEX_UNINITIALIZED`, initialize the index once with `za-cli --json index update`, report any partial errors, then retry. If the user explicitly requires newly synchronized content, refresh the known Item/Collection; use a full update only when the changed scope is unknown.
+2. If search returns `INDEX_UNINITIALIZED`, initialize the index once with `za-cli --json index update`, report any partial errors, then retry. If the user explicitly requires newly synchronized content, queue known Items with `index refresh --item KEY`; use synchronous `index update --collection PATH` for a known Collection. Do not block the request on a full-library update when the changed scope is unknown.
 3. Treat every semantic result as a lead. Inspect candidate metadata with `lookup ITEM_KEY`; do not select a paper from title similarity alone when identity matters.
 4. Read every Passage needed for the answer:
 

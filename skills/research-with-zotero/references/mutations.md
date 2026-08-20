@@ -24,8 +24,8 @@ Before import or adoption, identify the selected local path or Markdown attachme
 
 ## Index freshness
 
-- Successful `fulltext import`, `fulltext adopt`, and `fulltext migrate` already attempt the affected Item rebuild. If the result contains an index warning, run `za-cli --json index update --item ITEM_KEY` and report any remaining error.
-- After the Agent observes a new or replaced PDF/Markdown attachment from Zotero sync or another approved tool, run `index update --item ITEM_KEY`. If the affected keys are unknown or the change was a bulk sync, run one full `index update`.
+- Successful `fulltext import`, `fulltext adopt`, and `fulltext migrate` durably queue the affected Item for the background index worker. Do not wait for embedding. If enqueueing fails after the Zotero write commits, report the index warning; `index refresh --item ITEM_KEY` can retry enqueueing.
+- After the Agent observes a new or replaced PDF/Markdown attachment from Zotero sync or another approved tool, run `index refresh --item ITEM_KEY`. If affected keys are unknown or the change was a bulk sync, leave full reconciliation to explicit maintenance rather than blocking the current request.
 - Never ask the user to maintain the index manually.
 
 ## Duplicates

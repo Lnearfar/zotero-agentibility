@@ -17,7 +17,7 @@ Start the requested Zotero operation immediately. Do not run CLI help, `app doct
 - Run command help only when needed syntax is unknown or a command rejects the attempted syntax.
 - Run `za-cli --json app doctor` only after a CLI connectivity or dependency failure. Use `app doctor --deep` only for explicit index diagnosis.
 - Create one Browsing Session only when Collection navigation or another command requires it. Prefer `ZA_CLI_SESSION`, then `PI_SESSION_ID`; create the chosen ID if status returns `SESSION_NOT_FOUND`. Pass it explicitly to session-aware commands.
-- On `INDEX_UNINITIALIZED`, run `za-cli --json index update` once before retrying search. For an explicit freshness requirement, refresh the affected Item or Collection when known; use a full update only when the changed scope is unknown.
+- On `INDEX_UNINITIALIZED`, run `za-cli --json index update` once before retrying search. For explicit freshness, queue known Items with `index refresh --item KEY`; use synchronous `index update --collection PATH` for a known Collection. Do not run a full-library update in the request path when the changed scope is unknown.
 
 ## Workflow boundary
 
