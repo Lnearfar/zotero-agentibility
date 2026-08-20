@@ -242,8 +242,10 @@ class SemanticTests(unittest.TestCase):
     def test_single_item_update_preserves_last_bulk_status(self):
         self.db.items["EFGH5678"] = {"title": "B", "typeName": "book", "fields": {}, "creators": [], "tags": []}
         self.update()
+        reconcile = self.index._state()["last_reconcile"]
         self.update(item_keys=["ABCD1234"])
         self.assertEqual(self.index.status()["last_bulk_update"]["total"], 2)
+        self.assertEqual(self.index._state()["last_reconcile"], reconcile)
 
     def test_status_uses_persisted_stats_without_scanning_passages(self):
         self.update()

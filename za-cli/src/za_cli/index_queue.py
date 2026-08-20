@@ -23,6 +23,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _zotero_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
 class IndexQueue:
     def __init__(self, index_path: Path):
         self.root = Path(index_path) / "queue"
@@ -30,6 +34,7 @@ class IndexQueue:
         self.failed = self.root / "failed"
         self.worker_lock = self.root / "worker.lock"
         self.active = self.root / "active"
+        self.watermark = self.root / "watermark.json"
 
     def _directories(self) -> None:
         self.pending.mkdir(parents=True, exist_ok=True)
@@ -74,6 +79,45 @@ class IndexQueue:
                 except FileNotFoundError:
                     pass
         return {"queued": True, "item_keys": keys, "events": len(keys)}
+
+    def _write_json(self, path: Path, value: dict[str, Any]) -> None:
+        self._directories()
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(value, handle, ensure_ascii=False, separators=(",", ":"))
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            Path(temporary).replace(path)
+            self._fsync_directory(path.parent)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+    def discover(self, db, *, until: str | None = None) -> dict[str, Any]:
+        until = until or _zotero_now()
+        self._directories()
+        try:
+            state = json.loads(self.watermark.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            self._write_json(self.watermark, {"version": 1, "cursor": until})
+            return {"initialized": True, "since": None, "until": until, "item_keys": []}
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CliError("INDEX_WATERMARK_CORRUPT", "Index refresh watermark is unreadable") from exc
+        since = state.get("cursor") if isinstance(state, dict) and state.get("version") == 1 else None
+        if not isinstance(since, str):
+            raise CliError("INDEX_WATERMARK_CORRUPT", "Index refresh watermark is invalid")
+        if until <= since:
+            return {"initialized": False, "since": since, "until": since, "item_keys": []}
+        keys = db.modified_literature_keys(since, until)
+        if keys:
+            self.enqueue(keys, reason="zotero-watermark")
+        self._write_json(self.watermark, {"version": 1, "cursor": until})
+        return {"initialized": False, "since": since, "until": until, "item_keys": keys}
 
     def _read_event(self, path: Path) -> dict[str, Any]:
         try:
@@ -123,6 +167,13 @@ class IndexQueue:
             "failed_events": failed,
             **self.runtime_status(),
         }
+
+    def cycle(self, semantic_index, db, data_dir: Path, *, limit: int = 100,
+              until: str | None = None) -> dict[str, Any]:
+        discovery = self.discover(db, until=until)
+        result = self.work_once(semantic_index, db, data_dir, limit=limit)
+        result["discovery"] = discovery
+        return result
 
     def work_once(self, semantic_index, db, data_dir: Path, *, limit: int = 100) -> dict[str, Any]:
         self._directories()
@@ -195,6 +246,10 @@ class IndexQueue:
             except BlockingIOError as exc:
                 raise CliError("CONCURRENT_WORKER", "Another index worker is already running") from exc
             try:
+                try:
+                    self.active.unlink()
+                except FileNotFoundError:
+                    pass
                 yield
             finally:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
@@ -204,7 +259,7 @@ class IndexQueue:
         with self.worker():
             while True:
                 try:
-                    result = self.work_once(semantic_index, db, data_dir)
+                    result = self.cycle(semantic_index, db, data_dir)
                 except Exception as error:
                     print(json.dumps({
                         "code": getattr(error, "code", "INDEX_WORKER_ERROR"),

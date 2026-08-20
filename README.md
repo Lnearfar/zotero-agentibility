@@ -100,7 +100,14 @@ sudo apt install poppler-utils make zip unzip
 # Editable install: bare `za-cli` runs this checkout's source.
 uv tool install --editable --force ./za-cli
 make -C zotero-extension
+mkdir -p "$HOME/.config/systemd/user"
+install -m 0644 systemd/*.service systemd/*.timer "$HOME/.config/systemd/user/"
+systemctl --user daemon-reload
+systemctl --user enable --now zotero-agentibility-index-worker.service \
+  zotero-agentibility-index-reconcile.timer
 ```
+
+For a non-default Zotero profile or port, put `ZOTERO_DATA_DIR=/path/to/Zotero` and/or `ZOTERO_HTTP_PORT=23119` in `~/.config/zotero-agentibility/environment`, then restart the worker. The file is local configuration and must not contain or be committed with bearer tokens.
 
 In Zotero, open **Tools → Add-ons → Install Add-on From File**, select
 `zotero-extension/build/zotero-agentibility-*.xpi`, and restart Zotero.
@@ -126,7 +133,8 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 
 - a uv tool: `za-cli`;
 - an Agent Skill: `research-with-zotero`;
-- a Zotero Extension: **Zotero-Agentibility Bridge**.
+- a Zotero Extension: **Zotero-Agentibility Bridge**;
+- a user-level background index worker and 12-hour reconciliation timer.
 
 `doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, and cached semantic-index state. `doctor --deep` performs the expensive Passage-statistics reconciliation only for explicit diagnosis.
 
@@ -136,7 +144,8 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 | Active Zotero profile `extensions/`                                 | Extension XPI, managed by Zotero                                  |
 | `~/.agents/skills/research-with-zotero/`                            | Runtime Agent instructions                                        |
 | `~/.config/zotero-agentibility/`                                     | Mode-`0600` bridge token, sessions, and write audit               |
-| `~/.local/share/zotero-agentibility/index/<profile>/`                | Profile-specific Chroma Passage index                             |
+| `~/.local/share/zotero-agentibility/index/<profile>/`                | Profile-specific Chroma Passage index and durable refresh queue   |
+| `~/.config/systemd/user/zotero-agentibility-index-*`                 | User-level worker and reconciliation timer                        |
 | Zotero attachment storage                                           | Canonical `fulltext.md` only after an explicit confirmed import or adoption |
 
 Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:fulltext` and `za-cli:source`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`.
@@ -174,7 +183,7 @@ A development build can be installed without UI automation by closing Zotero and
    za-cli --json find ITEM_KEY "exact phrase" --context 8
    ```
 
-   If search reports `INDEX_UNINITIALIZED`, initialize once with `za-cli --json index update`. Queue a known changed Item with `za-cli --json index refresh --item ITEM_KEY`; run `za-cli index worker` separately to process queued updates without blocking research. This release does not install or start a supervisor.
+   If search reports `INDEX_UNINITIALIZED`, initialize once with `za-cli --json index update`. Queue a known changed Item with `za-cli --json index refresh --item ITEM_KEY`; the installed user service processes it without blocking research.
 
 2. Create one Browsing Session only when Collection navigation matters:
 
@@ -197,7 +206,7 @@ Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-re
 | `pwd`, `cd`, `ls`             | Navigate Collection paths without using Zotero UI selection                          |
 | `lookup`, `source`            | Inspect Literature Item metadata and preferred attachment                            |
 | `read`, `find`                | Read bounded source lines or locate exact text; `read --all` emits complete raw text |
-| `index update/status/refresh/worker/inspect` | Maintain, queue, process, and diagnose the profile-specific Passage index           |
+| `index update/reconcile/status/refresh/worker/inspect` | Maintain, queue, process, and diagnose the profile-specific Passage index |
 | `search`                      | Search indexed Passages globally or within an explicit Collection/item scope         |
 | `resolve`                     | Resolve a standalone PDF/EPUB through Zotero, with optional Markdown identifier fallback |
 | `fulltext audit`              | Produce a read-only migration plan for existing Markdown attachments                 |
@@ -210,7 +219,7 @@ Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-re
 
 Browsing Sessions are separate mode-`0600` JSON files written atomically under `~/.config/zotero-agentibility/sessions/`. Each session stores a stable Collection Key, so two agents can navigate different Collections without sharing a hidden working directory.
 
-Semantic writes use a cross-process update lock and bounded Chroma batches. A separate durable queue stores changed Item Keys; `index worker` is a single long-lived process that polls only this queue and sleeps while idle. Installation does not start it yet, so an operator or external supervisor must run it. Reads and searches never wait for it. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, Session ID, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
+Semantic writes use a cross-process update lock and bounded Chroma batches. A user systemd service runs one long-lived `index worker`, which checks Zotero's modification watermark, polls only the durable Item queue, and sleeps while idle. A low-priority timer performs full reconciliation every 12 hours. Reads and searches never wait for either process. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, Session ID, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
 
 </details>
 
@@ -219,7 +228,7 @@ Semantic writes use a cross-process update lock and bounded Chroma batches. A se
 
 General ingest, metadata editing, Collection mutation, duplicate merging, OCR, DOCX citation automation, and permanent deletion are not yet implemented. Converted images aren't bundled; for figures, go back to the PDF. The catalog and Full Text bridge work with My Library only; group libraries aren't supported yet.
 
-The index is profile-specific and retrieval uses its current snapshot immediately. CLI Full Text changes enter the background refresh queue; other external Zotero changes appear after an explicit `index update` until Extension notifications and periodic reconciliation are installed. Failed extraction is reported as partial coverage rather than silently omitted.
+The index is profile-specific and retrieval uses its current snapshot immediately. CLI Full Text changes enter the durable queue; the worker discovers parent and attachment metadata changes through a cheap SQLite watermark. The reconciliation timer catches deletions, linked-file edits, and missed events. Failed extraction is reported as partial coverage rather than silently omitted.
 
 </details>
 
@@ -269,6 +278,10 @@ The repository is licensed under Apache-2.0. It is based on [`cli-anything-zoter
 Remove **Zotero-Agentibility Bridge** in Zotero's Add-ons manager and restart Zotero, then run:
 
 ```bash
+systemctl --user disable --now zotero-agentibility-index-worker.service \
+  zotero-agentibility-index-reconcile.timer
+rm -f ~/.config/systemd/user/zotero-agentibility-index-{worker,reconcile}.{service,timer}
+systemctl --user daemon-reload
 uv tool uninstall za-cli
 rm -rf ~/.agents/skills/research-with-zotero
 rm -rf ~/.config/zotero-agentibility ~/.local/share/zotero-agentibility

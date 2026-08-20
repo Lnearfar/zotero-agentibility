@@ -19,6 +19,16 @@ class SemanticIndex:
         return self.report
 
 
+class DB:
+    def __init__(self, keys):
+        self.keys = keys
+        self.calls = []
+
+    def modified_literature_keys(self, since, until):
+        self.calls.append((since, until))
+        return list(self.keys)
+
+
 class IndexQueueTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -27,6 +37,22 @@ class IndexQueueTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_first_discovery_initializes_watermark_without_backfill(self):
+        db = DB(["ABCD1234"])
+        result = self.queue.discover(db, until="2026-08-20 10:00:00")
+        self.assertTrue(result["initialized"])
+        self.assertEqual(db.calls, [])
+        self.assertEqual(self.queue.status()["pending_events"], 0)
+
+    def test_later_discovery_queues_modified_parent_keys(self):
+        db = DB([])
+        self.queue.discover(db, until="2026-08-20 10:00:00")
+        db.keys = ["ABCD1234"]
+        result = self.queue.discover(db, until="2026-08-20 10:01:00")
+        self.assertEqual(db.calls, [("2026-08-20 10:00:00", "2026-08-20 10:01:00")])
+        self.assertEqual(result["item_keys"], ["ABCD1234"])
+        self.assertEqual(self.queue.status()["pending_items"], 1)
 
     def test_enqueue_is_durable_and_worker_coalesces_duplicate_keys(self):
         self.queue.enqueue(["ABCD1234", "ABCD1234", "EFGH5678"], reason="test")

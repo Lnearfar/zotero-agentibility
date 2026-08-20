@@ -334,6 +334,8 @@ class SemanticIndex:
             state["inventory"] = {
                 "version": _INVENTORY_VERSION, "complete": inventory_complete, "items": inventory,
             }
+        if report.get("scope") == "library":
+            state["last_reconcile"] = state["updated_at"]
         if report.get("scope") == "library" or int(report.get("total", 0)) > 1:
             state["last_bulk_update"] = {
                 "updated_at": state["updated_at"],

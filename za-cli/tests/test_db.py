@@ -91,6 +91,19 @@ class DatabaseTests(unittest.TestCase):
             self.db.standalone_attachment("KUS9YXK3")
         self.assertEqual(caught.exception.code, "UNRECOGNIZED_DOCUMENT_NOT_FOUND")
 
+    def test_modified_literature_keys_include_parent_and_attachment_changes(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("UPDATE items SET dateModified='2026-08-20 10:00:01' WHERE key='ITEMONE1'")
+            conn.execute("UPDATE items SET dateModified='2026-08-20 10:00:02' WHERE key='PDFKEY33'")
+        self.assertEqual(
+            self.db.modified_literature_keys("2026-08-20 10:00:00", "2026-08-20 10:00:03"),
+            ["ITEMONE1"],
+        )
+        self.assertEqual(
+            self.db.modified_literature_keys("2026-08-20 10:00:03", "2026-08-20 10:00:04"),
+            [],
+        )
+
     def test_index_inventory_returns_scoped_parent_and_attachment_revisions(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("UPDATE items SET dateModified='parent-v1' WHERE key='ITEMONE1'")

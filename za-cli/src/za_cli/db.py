@@ -284,6 +284,23 @@ class Database:
                 )]
         return attachments
 
+    def modified_literature_keys(self, since: str, until: str) -> list[str]:
+        with closing(connect_immutable(self.path)) as conn:
+            rows = conn.execute(
+                """SELECT DISTINCT parent.key,parent.itemID
+                   FROM items changed
+                   LEFT JOIN itemAttachments attachment ON attachment.itemID=changed.itemID
+                   JOIN items parent ON parent.itemID=COALESCE(attachment.parentItemID,changed.itemID)
+                   JOIN itemTypes parentType ON parentType.itemTypeID=parent.itemTypeID
+                   WHERE parent.libraryID=?
+                   AND parentType.typeName NOT IN ('attachment','note','annotation')
+                   AND changed.dateModified>=? AND changed.dateModified<=?
+                   AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=parent.itemID)
+                   ORDER BY parent.itemID""",
+                (self.library_id(), since, until),
+            ).fetchall()
+        return [row["key"] for row in rows]
+
     def index_inventory(self, item_keys: Iterable[str] | None = None) -> list[dict[str, Any]]:
         requested = None if item_keys is None else list(dict.fromkeys(item_keys))
         if requested == []:

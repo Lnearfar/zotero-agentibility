@@ -1,0 +1,8 @@
+[Unit]
+Description=Reconcile the Zotero-Agentibility semantic index
+[Service]
+Type=oneshot
+EnvironmentFile=-%h/.config/zotero-agentibility/environment
+ExecStart=%h/.local/bin/za-cli --json index reconcile
+Nice=10
+IOSchedulingClass=idle

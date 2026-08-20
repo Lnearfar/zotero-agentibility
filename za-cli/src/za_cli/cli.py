@@ -402,6 +402,20 @@ def index_update(
         ctx.exit(1)
 
 
+@index_group.command("reconcile", help="Reconcile the full library and emit a compact maintenance report.")
+@click.pass_context
+def index_reconcile(ctx: click.Context) -> None:
+    config = _config(ctx)
+    report = _semantic_index(ctx).update(_database(ctx), config.data_dir)
+    counts: dict[str, int] = {}
+    for error in report.get("errors", []):
+        code = str(error.get("code") or "INDEX_WRITE_FAILED")
+        counts[code] = counts.get(code, 0) + 1
+    result = {key: value for key, value in report.items() if key != "errors"}
+    result["errors"] = {"count": sum(counts.values()), "by_code": counts}
+    emit(ctx, result, code="OK" if not counts else "INDEX_PARTIAL")
+
+
 @index_group.command("status", help="Show semantic index readiness, cached coverage, and refresh queue.")
 @click.option("--deep", is_flag=True, help="Reconcile cached statistics by scanning Passage metadata.")
 @click.pass_context
@@ -434,7 +448,7 @@ def index_worker(ctx: click.Context, once: bool, poll_seconds: float) -> None:
     db = _database(ctx)
     if once:
         with queue.worker():
-            result = queue.work_once(semantic_index, db, config.data_dir)
+            result = queue.cycle(semantic_index, db, config.data_dir)
         errors = (result.get("report") or {}).get("errors", [])
         emit(ctx, result, ok=not errors, code="OK" if not errors else "INDEX_PARTIAL")
         if errors:

@@ -1,0 +1,15 @@
+[Unit]
+Description=Zotero-Agentibility semantic index refresh worker
+After=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/zotero-agentibility/environment
+ExecStart=%h/.local/bin/za-cli index worker
+Restart=on-failure
+RestartSec=60
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target

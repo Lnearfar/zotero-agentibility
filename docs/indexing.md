@@ -25,7 +25,7 @@ These are earlier project decisions, not reduced search behavior:
 - The index is fresh and profile-specific under `~/.local/share/zotero-agentibility/index/<zotero-profile>/`; the existing `~/.config/zotero-mcp/chroma_db` is never read, changed, or migrated.
 - Only Chroma's local ONNX MiniLM embedding is supported. Cloud embeddings, OpenAI Batch, query translation, and sending paper text off-machine are prohibited.
 - The installed reranker is disabled and depends on PyTorch/Transformers; it is not part of the ONNX-only runtime selected for this project.
-- Foreground retrieval uses the existing index immediately. Changed Literature Items enter a durable refresh queue and an independent worker performs scoped updates; search never waits for maintenance. There is no startup/pre-search full update, Extension watcher, or scheduled full reconciliation yet.
+- Foreground retrieval uses the existing index immediately. Changed Literature Items enter a durable refresh queue and an independent worker performs scoped updates; search never waits for maintenance. There is no startup/pre-search full update.
 - The CLI reads the active local My Library through immutable SQLite and local attachment files; it does not silently fall back to a remote Zotero API. Zotero Desktop must still be running, as required project-wide; “local-only” does not mean offline SQLite operation.
 
 ## Passage and metadata contract
@@ -42,8 +42,9 @@ Grounded citations use `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF
 ## Commands and scope
 
 - `za-cli index update [--force]` synchronously compares a stored per-Item inventory with current Zotero revisions and source file stats, then reads, extracts, splits, and embeds only new or changed sources. `--collection PATH` or repeatable `--item KEY` provides an explicit scoped update; `--force` rebuilds the selected scope. Keep this for initialization, diagnosis, and operator recovery.
+- `za-cli index reconcile` performs a full synchronous update for scheduled maintenance, emits compact error counts instead of every Item error, and exits successfully when the pass completed even if coverage remains partial.
 - `za-cli index refresh --item KEY` durably queues one or more Literature Items and returns without embedding.
-- `za-cli index worker --once` consumes one bounded queue batch and exits nonzero when any Item remains failed. `za-cli index worker` is a long-lived foreground process; it sleeps when idle and does not daemonize itself. This release does not install or start a supervisor, so queued work remains pending until an operator runs the worker or arranges external process supervision.
+- `za-cli index worker --once` discovers changes, consumes one bounded queue batch, and exits nonzero when any Item remains failed. `za-cli index worker` is a long-lived foreground process; it sleeps when idle and does not daemonize itself. Installation registers it as a low-priority user systemd service.
 - `za-cli index status` reads persisted readiness, freshness, coverage, worker state, and queue backlog without traversing Chroma. Legacy state may report `stats_stale` until the next update or explicit `index status --deep` reconciliation.
 - `za-cli index status --deep` traverses Passage metadata, refreshes persisted statistics, and is reserved for explicit diagnosis rather than agent startup.
 - `za-cli index inspect` exposes stored metadata and optional Passage documents for diagnosis.
@@ -62,6 +63,8 @@ One non-blocking `worker.lock` permits a single worker. `update.lock` still seri
 
 The continuous worker polls only the small queue, not Zotero or the full library. Failed batches are logged to stderr and retry with process-local exponential backoff capped at five minutes. A synchronous `index update` does not acknowledge queued events, because a concurrent event may represent a later change; a subsequent worker pass safely rechecks and acknowledges them. Search's `refreshing` flag means a worker is actively processing a batch, not merely alive, and does not weaken `possibly_stale: true`.
 
-Process supervision, Zotero Extension change notifications, and low-frequency full reconciliation are separate later installation work. Until those exist, Full Text writes and explicit Item refreshes are the only automatic queue producers, and search continues to report `possibly_stale: true`.
+The worker maintains a `watermark.json` cursor over Zotero's parent and attachment `dateModified` values. The first run establishes the current watermark without historical backfill; later cycles enqueue changed parent Item Keys. The query overlaps the boundary timestamp, so it may repeat an Item but cannot lose a same-second change; scoped source signatures make repetition cheap. This detects Zotero metadata/attachment changes without scanning Chroma or full text.
+
+A low-priority user timer runs full `index reconcile` every 12 hours to catch deleted Items, externally edited linked files, and missed events. Zotero Extension notifier integration remains a future lower-latency producer. Search continues to report `possibly_stale: true` because worker/timer maintenance is asynchronous.
 
 Replacing Markdown removes obsolete chunks after the replacement chunks are prepared. Removing Markdown or deleting a queued Literature Item removes its stale indexed Passages during the scoped update. Failed extraction or embedding does not silently erase the previous usable records.

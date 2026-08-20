@@ -83,6 +83,25 @@ class CliShapeTests(unittest.TestCase):
         self.assertEqual((quick.exit_code, deep.exit_code), (0, 0))
         self.assertEqual(json.loads(quick.stdout)["data"]["queue"]["pending_items"], 0)
 
+    def test_index_reconcile_reports_partial_coverage_without_failing_service(self):
+        report = {
+            "scope": "library", "total": 3, "indexed": 0, "updated": 0,
+            "unchanged": 2, "removed": 0, "removed_passages": 0, "partial": True,
+            "errors": [
+                {"item_key": "ABCD2345", "code": "SOURCE_NOT_FOUND", "error": "missing"},
+            ],
+        }
+        with mock.patch("za_cli.cli._database"), mock.patch("za_cli.cli._semantic_index") as semantic:
+            semantic.return_value.update.return_value = report
+            result = CliRunner().invoke(cli, ["--json", "index", "reconcile"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["code"], "INDEX_PARTIAL")
+        self.assertEqual(payload["data"]["errors"], {
+            "count": 1, "by_code": {"SOURCE_NOT_FOUND": 1},
+        })
+
     def test_index_refresh_enqueues_without_updating(self):
         with mock.patch("za_cli.cli._database") as database, \
              mock.patch("za_cli.cli._index_queue") as queue, \
@@ -102,10 +121,10 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._database") as database, \
              mock.patch("za_cli.cli._index_queue") as queue, \
              mock.patch("za_cli.cli._semantic_index") as semantic:
-            queue.return_value.work_once.return_value = {"processed_items": 1, "report": {"errors": []}}
+            queue.return_value.cycle.return_value = {"processed_items": 1, "report": {"errors": []}}
             result = CliRunner().invoke(cli, ["--json", "index", "worker", "--once"])
         self.assertEqual(result.exit_code, 0, result.output)
-        queue.return_value.work_once.assert_called_once_with(
+        queue.return_value.cycle.assert_called_once_with(
             semantic.return_value, database.return_value, mock.ANY,
         )
 
@@ -113,7 +132,7 @@ class CliShapeTests(unittest.TestCase):
         with mock.patch("za_cli.cli._database"), \
              mock.patch("za_cli.cli._index_queue") as queue, \
              mock.patch("za_cli.cli._semantic_index"):
-            queue.return_value.work_once.return_value = {
+            queue.return_value.cycle.return_value = {
                 "processed_items": 1,
                 "report": {"errors": [{"item_key": "ABCD2345", "error": "failed"}]},
             }
