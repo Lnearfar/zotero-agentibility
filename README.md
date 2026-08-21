@@ -148,7 +148,33 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 | `~/.config/systemd/user/zotero-agentibility-index-*`                 | User-level worker and reconciliation timer                        |
 | Zotero attachment storage                                           | Canonical `fulltext.md` only after an explicit confirmed import or adoption |
 
-Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:fulltext` and `za-cli:source`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`.
+Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:md` and `za-cli:pdf`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`. `za-cli:md` marks canonical Markdown Full Text; `za-cli:pdf` marks the selected Source Document PDF when disambiguation is needed.
+
+Existing libraries tagged with the old names (`za-cli:fulltext` / `za-cli:source`) must be migrated before code that only recognizes the short tags is used. Run this once in Zotero 7 (Tools → Developer → Run JavaScript):
+
+```js
+(async () => {
+  const mapping = { "za-cli:fulltext": "za-cli:md", "za-cli:source": "za-cli:pdf" };
+  const report = {};
+  for (const [oldTag, newTag] of Object.entries(mapping)) {
+    const items = Zotero.Items.getByTag(oldTag, true);
+    let renamed = 0;
+    for (const item of items) {
+      if (!item.isAttachment()) continue;
+      try {
+        item.removeTag(oldTag);
+        item.addTag(newTag, 0);
+        await item.saveTx();
+        renamed++;
+      } catch (e) {} // skip uneditable (e.g. trashed) items
+    }
+    report[oldTag + " → " + newTag] = renamed;
+  }
+  return JSON.stringify(report);
+})();
+```
+
+The old names must show 0 afterwards. Migration bumps each item's `dateModified`, so the background worker re-evaluates the affected items on its next cycle; no index rebuild is needed.
 
 <details>
 <summary><b>Development XPI upgrades</b></summary>

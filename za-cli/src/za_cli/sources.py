@@ -20,8 +20,8 @@ from .db import Database
 from .errors import CliError
 from .poppler import extract_pdf
 
-FULLTEXT_TAG = "za-cli:fulltext"
-SOURCE_TAG = "za-cli:source"
+FULLTEXT_TAG = "za-cli:md"
+SOURCE_TAG = "za-cli:pdf"
 _KEY = re.compile(r"^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$")
 
 
@@ -55,7 +55,7 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
     if len(markdown) > 1:
         raise CliError(
             "MULTIPLE_FULLTEXT",
-            "Literature Item has multiple attachments tagged za-cli:fulltext",
+            "Literature Item has multiple attachments tagged za-cli:md",
             details={"keys": [a["key"] for a in markdown]},
         )
     if markdown:
@@ -90,7 +90,7 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
         if len(tagged) > 1:
             raise CliError(
                 "AMBIGUOUS_SOURCE",
-                "Multiple PDFs are tagged za-cli:source",
+                "Multiple PDFs are tagged za-cli:pdf",
                 details={"keys": [a["key"] for a in tagged]},
             )
         if tagged:
@@ -100,7 +100,7 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
         elif len(pdfs) > 1:
             raise CliError(
                 "AMBIGUOUS_SOURCE",
-                "Multiple PDFs require one attachment tagged za-cli:source",
+                "Multiple PDFs require one attachment tagged za-cli:pdf",
                 details={"keys": [a["key"] for a in pdfs]},
             )
         else:

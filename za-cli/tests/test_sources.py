@@ -8,6 +8,8 @@ from unittest import mock
 
 from za_cli.errors import CliError
 from za_cli.sources import (
+    FULLTEXT_TAG,
+    SOURCE_TAG,
     adoption_snapshot,
     fulltext_manifest,
     import_snapshot,
@@ -36,7 +38,7 @@ def attachment(
         "tags": list(tags),
         "typeName": type_name,
         "linkMode": link_mode,
-        "title": title if title is not None else ("Markdown Full Text" if "za-cli:fulltext" in tags else ""),
+        "title": title if title is not None else ("Markdown Full Text" if FULLTEXT_TAG in tags else ""),
     }
 
 
@@ -63,7 +65,7 @@ class PreferredSourceTests(unittest.TestCase):
             [
                 attachment("OLDPDF", "storage:old.pdf"),
                 attachment("NEWPDF", "storage:new.pdf"),
-                attachment("MARKDOWN", "storage:fulltext.md", tags=("za-cli:fulltext",), content_type="text/markdown"),
+                attachment("MARKDOWN", "storage:fulltext.md", tags=(FULLTEXT_TAG,), content_type="text/markdown"),
             ],
             Path("/tmp/zotero"),
         )
@@ -73,7 +75,7 @@ class PreferredSourceTests(unittest.TestCase):
     def test_tagged_fulltext_must_use_canonical_filename(self):
         with self.assertRaises(CliError) as caught:
             preferred_source(
-                [attachment("MARKDOWN", "storage:source.md", tags=("za-cli:fulltext",), content_type="text/markdown")],
+                [attachment("MARKDOWN", "storage:source.md", tags=(FULLTEXT_TAG,), content_type="text/markdown")],
                 Path("/tmp/zotero"),
             )
         self.assertEqual(caught.exception.code, "INVALID_FULLTEXT")
@@ -81,7 +83,7 @@ class PreferredSourceTests(unittest.TestCase):
     def test_tagged_fulltext_rejects_unsafe_storage_paths(self):
         record = attachment(
             "MARKDOWN", "storage:../../fulltext.md",
-            tags=("za-cli:fulltext",), content_type="text/markdown",
+            tags=(FULLTEXT_TAG,), content_type="text/markdown",
         )
         with self.assertRaises(CliError) as caught:
             preferred_source([record], Path("/tmp/zotero"))
@@ -98,7 +100,7 @@ class PreferredSourceTests(unittest.TestCase):
             (stored / "fulltext.md").symlink_to(target)
             record = attachment(
                 "MARKDOWN", "storage:fulltext.md",
-                tags=("za-cli:fulltext",), content_type="text/markdown",
+                tags=(FULLTEXT_TAG,), content_type="text/markdown",
             )
             with self.assertRaises(CliError) as caught:
                 preferred_source([record], root)
@@ -107,8 +109,8 @@ class PreferredSourceTests(unittest.TestCase):
     def test_note_and_annotation_are_never_candidates(self):
         selected = preferred_source(
             [
-                attachment("NOTE", "storage:note.md", tags=("za-cli:fulltext",), content_type="text/markdown", type_name="note"),
-                attachment("ANNOT", "storage:annotation.md", tags=("za-cli:fulltext",), content_type="text/markdown", type_name="annotation"),
+                attachment("NOTE", "storage:note.md", tags=(FULLTEXT_TAG,), content_type="text/markdown", type_name="note"),
+                attachment("ANNOT", "storage:annotation.md", tags=(FULLTEXT_TAG,), content_type="text/markdown", type_name="annotation"),
                 attachment("PDF", "storage:paper.pdf"),
             ],
             Path("/tmp/zotero"),
@@ -149,7 +151,7 @@ class PreferredSourceTests(unittest.TestCase):
             canonical.write_text("new", encoding="utf-8")
             old.write_text("old", encoding="utf-8")
             records = [
-                attachment("CANONICAL", str(canonical), tags=("za-cli:fulltext",), content_type="text/plain"),
+                attachment("CANONICAL", str(canonical), tags=(FULLTEXT_TAG,), content_type="text/plain"),
                 attachment("OLD", str(old), content_type="text/plain"),
             ]
             manifest = fulltext_manifest(FakeDatabase({"ITEMKEY1": records}), root)
@@ -165,7 +167,7 @@ class PreferredSourceTests(unittest.TestCase):
                 directory.mkdir()
                 path = directory / "fulltext.md"
                 path.write_text(key, encoding="utf-8")
-                records.append(attachment(key, str(path), tags=("za-cli:fulltext",), content_type="text/plain"))
+                records.append(attachment(key, str(path), tags=(FULLTEXT_TAG,), content_type="text/plain"))
             manifest = fulltext_manifest(FakeDatabase({"ITEMKEY1": records}), root)
         self.assertEqual({entry["candidateClass"] for entry in manifest["entries"]}, {"unresolved"})
 
@@ -184,7 +186,7 @@ class PreferredSourceTests(unittest.TestCase):
             path = Path(tmp) / "paper.pdf"
             path.write_bytes(b"pdf")
             manifest = fulltext_manifest(
-                FakeDatabase({"ITEMKEY1": [attachment("BADMARK", str(path), tags=("za-cli:fulltext",))]}),
+                FakeDatabase({"ITEMKEY1": [attachment("BADMARK", str(path), tags=(FULLTEXT_TAG,))]}),
                 Path(tmp),
             )
         self.assertEqual(manifest["entries"][0]["attachmentKey"], "BADMARK")
@@ -266,7 +268,7 @@ class PreferredSourceTests(unittest.TestCase):
             db = FakeDatabase({
                 "ABCD2345": [
                     attachment("EFGH6789", str(source), content_type="text/plain"),
-                    attachment("JKLM2345", str(old), tags=("za-cli:fulltext",), content_type="text/plain"),
+                    attachment("JKLM2345", str(old), tags=(FULLTEXT_TAG,), content_type="text/plain"),
                 ]
             })
             with self.assertRaises(CliError) as caught:
@@ -292,7 +294,7 @@ class PreferredSourceTests(unittest.TestCase):
             db = FakeDatabase({
                 "ABCD2345": [
                     attachment("JKLM2345", str(root / "fulltext.md"),
-                               tags=("za-cli:fulltext",), content_type="text/markdown"),
+                               tags=(FULLTEXT_TAG,), content_type="text/markdown"),
                 ]
             })
             with self.assertRaises(CliError) as caught:
@@ -370,11 +372,19 @@ class PreferredSourceTests(unittest.TestCase):
         selected = preferred_source(
             [
                 attachment("PDFONE", "storage:one.pdf"),
-                attachment("PDFTWO", "storage:two.pdf", tags=("za-cli:source",)),
+                attachment("PDFTWO", "storage:two.pdf", tags=(SOURCE_TAG,)),
             ],
             Path("/tmp/zotero"),
         )
         self.assertEqual(selected["attachmentKey"], "PDFTWO")
+
+
+class TagContractTests(unittest.TestCase):
+    """External Zotero identifiers are part of the data contract."""
+
+    def test_short_tag_identifiers(self):
+        self.assertEqual(FULLTEXT_TAG, "za-cli:md")
+        self.assertEqual(SOURCE_TAG, "za-cli:pdf")
 
 
 if __name__ == "__main__":
