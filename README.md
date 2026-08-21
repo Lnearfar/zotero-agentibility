@@ -134,7 +134,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 - a uv tool: `za-cli`;
 - an Agent Skill: `research-with-zotero`;
 - a Zotero Extension: **Zotero-Agentibility Bridge**;
-- a user-level background index worker and 12-hour reconciliation timer.
+- a user-level background index worker and reconciliation timer (first run about 15 minutes after activation, then about every 12 hours, with randomized delay).
 
 `doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, and cached semantic-index state. `doctor --deep` performs the expensive Passage-statistics reconciliation only for explicit diagnosis.
 
@@ -219,7 +219,7 @@ Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-re
 
 Browsing Sessions are separate mode-`0600` JSON files written atomically under `~/.config/zotero-agentibility/sessions/`. Each session stores a stable Collection Key, so two agents can navigate different Collections without sharing a hidden working directory.
 
-Semantic writes use a cross-process update lock and bounded Chroma batches. A user systemd service runs one long-lived `index worker`, which checks Zotero's modification watermark, polls only the durable Item queue, and sleeps while idle. A low-priority timer performs full reconciliation every 12 hours. Reads and searches never wait for either process. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, Session ID, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
+Semantic writes use a cross-process update lock and bounded Chroma batches. A user systemd service runs one long-lived `index worker`, which performs a lightweight Zotero SQLite modification-watermark query, polls the durable Item queue, and sleeps while idle. A low-priority timer performs full reconciliation about 15 minutes after activation and then about every 12 hours, with randomized delay. Reads and searches never wait for either process. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, Session ID, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
 
 </details>
 

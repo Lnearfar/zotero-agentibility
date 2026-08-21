@@ -20,7 +20,7 @@ Human-readable text remains the default. Agents and scripts pass `--json` for co
 
 `doctor` checks that Zotero is running, the shared bearer-token file has safe permissions, the Extension bridge protocol is compatible with the CLI, required Linux tools are present, and reads cached semantic-index state. `doctor --deep` additionally reconciles cached index statistics by traversing Passage metadata and is reserved for explicit diagnosis.
 
-`index refresh` only queues selected Items. `index worker --once` discovers Zotero changes and drains one bounded batch; `index worker` is a long-lived polling process that sleeps while idle and does not daemonize itself. Installation runs it through user systemd and registers a low-priority 12-hour `index reconcile` timer. `reconcile` runs the same full update but emits compact partial-coverage counts and exits successfully when the maintenance pass itself completed.
+`index refresh` only queues selected Items. `index worker --once` discovers Zotero changes and drains one bounded batch; `index worker` is a long-lived polling process that sleeps while idle and does not daemonize itself. Installation runs it through user systemd and registers a low-priority timer that first runs `index reconcile` about 15 minutes after activation (with up to 15 minutes of randomized delay), then about every 12 hours. `reconcile` runs the same full update but emits compact partial-coverage counts and exits successfully when the maintenance pass itself completed.
 
 `ls`, `search`, `find`, `read`, and indexing remain local. Network access occurs only for explicit DOI/arXiv/URL ingest, PDF fetching, metrics, or Zotero sync; responses identify the external source, and no command sends paper full text.
 
