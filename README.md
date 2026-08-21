@@ -154,27 +154,41 @@ Existing libraries tagged with the old names (`za-cli:fulltext` / `za-cli:source
 
 ```js
 (async () => {
-  const mapping = { "za-cli:fulltext": "za-cli:md", "za-cli:source": "za-cli:pdf" };
+  const libraryID = Zotero.Libraries.userLibraryID;
+
+  const mapping = {
+    "za-cli:fulltext": "za-cli:md",
+    "za-cli:source": "za-cli:pdf",
+  };
+
   const report = {};
+
   for (const [oldTag, newTag] of Object.entries(mapping)) {
-    const items = Zotero.Items.getByTag(oldTag, true);
-    let renamed = 0;
-    for (const item of items) {
-      if (!item.isAttachment()) continue;
-      try {
-        item.removeTag(oldTag);
-        item.addTag(newTag, 0);
-        await item.saveTx();
-        renamed++;
-      } catch (e) {} // skip uneditable (e.g. trashed) items
+    const oldTagID = Zotero.Tags.getID(oldTag);
+
+    if (!oldTagID) {
+      report[`${oldTag} → ${newTag}`] = {
+        renamed: 0,
+        status: "old tag not found",
+      };
+      continue;
     }
-    report[oldTag + " → " + newTag] = renamed;
+
+    const itemIDs = await Zotero.Tags.getTagItems(libraryID, oldTagID);
+
+    await Zotero.Tags.rename(libraryID, oldTag, newTag);
+
+    report[`${oldTag} → ${newTag}`] = {
+      renamed: itemIDs.length,
+      status: "ok",
+    };
   }
-  return JSON.stringify(report);
+
+  return JSON.stringify(report, null, 2);
 })();
 ```
 
-The old names must show 0 afterwards. Migration bumps each item's `dateModified`, so the background worker re-evaluates the affected items on its next cycle; no index rebuild is needed.
+The old names must show 0 afterwards. `Zotero.Tags.rename` merges into an existing new-name tag, updates sync state, and cleans up the old tag for every affected item, including Trash. It bumps each item's `clientDateModified`, so the background worker re-evaluates the affected items on its next cycle; no index rebuild is needed.
 
 <details>
 <summary><b>Development XPI upgrades</b></summary>
