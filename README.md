@@ -150,46 +150,6 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 
 Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:md` and `za-cli:pdf`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`. `za-cli:md` marks canonical Markdown Full Text; `za-cli:pdf` marks the selected Source Document PDF when disambiguation is needed.
 
-Existing libraries tagged with the old names (`za-cli:fulltext` / `za-cli:source`) must be migrated before code that only recognizes the short tags is used. Run this once in Zotero 7 (Tools → Developer → Run JavaScript):
-
-```js
-(async () => {
-  const libraryID = Zotero.Libraries.userLibraryID;
-
-  const mapping = {
-    "za-cli:fulltext": "za-cli:md",
-    "za-cli:source": "za-cli:pdf",
-  };
-
-  const report = {};
-
-  for (const [oldTag, newTag] of Object.entries(mapping)) {
-    const oldTagID = Zotero.Tags.getID(oldTag);
-
-    if (!oldTagID) {
-      report[`${oldTag} → ${newTag}`] = {
-        renamed: 0,
-        status: "old tag not found",
-      };
-      continue;
-    }
-
-    const itemIDs = await Zotero.Tags.getTagItems(libraryID, oldTagID);
-
-    await Zotero.Tags.rename(libraryID, oldTag, newTag);
-
-    report[`${oldTag} → ${newTag}`] = {
-      renamed: itemIDs.length,
-      status: "ok",
-    };
-  }
-
-  return JSON.stringify(report, null, 2);
-})();
-```
-
-The old names must show 0 afterwards. `Zotero.Tags.rename` merges into an existing new-name tag, updates sync state, and cleans up the old tag for every affected item, including Trash. It bumps each item's `clientDateModified`, so the background worker re-evaluates the affected items on its next cycle; no index rebuild is needed.
-
 <details>
 <summary><b>Development XPI upgrades</b></summary>
 
