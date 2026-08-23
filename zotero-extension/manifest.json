@@ -8,7 +8,7 @@
       "id": "zotero-agentibility@local",
       "update_url": "https://github.com/Lnearfar/zotero-agentibility/releases/latest/download/updates.json",
       "strict_min_version": "7.0",
-      "strict_max_version": "9.*"
+      "strict_max_version": "10.*"
     }
   },
   "author": "zotero-agentibility contributors"

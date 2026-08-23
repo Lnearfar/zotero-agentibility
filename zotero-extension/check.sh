@@ -16,7 +16,7 @@ require() {
 require manifest.json '"id": "zotero-agentibility@local"'
 require manifest.json '"update_url": "https://github.com/Lnearfar/zotero-agentibility/releases/latest/download/updates.json"'
 require manifest.json '"strict_min_version": "7.0"'
-require manifest.json '"strict_max_version": "9.*"'
+require manifest.json '"strict_max_version": "10.*"'
 require bootstrap.js 'var ENDPOINT = "/zotero-agentibility/v1/operation";'
 require bootstrap.js 'var PROTOCOL = 1;'
 require bootstrap.js 'var VERSION = null;'
@@ -104,7 +104,7 @@ cat > updates.json <<EOF
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",
-              "strict_max_version": "9.*"
+              "strict_max_version": "10.*"
             }
           }
         }

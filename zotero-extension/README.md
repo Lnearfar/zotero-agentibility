@@ -12,7 +12,7 @@ This reads the version from `manifest.json`, validates the source, creates `buil
 
 ## Development install or upgrade
 
-Zotero 9 scans `<profile>/extensions/<add-on-id>.xpi` on startup, so development builds can be installed without UI automation. **Close Zotero first**, set the exact active profile explicitly, validate the archive, and replace it atomically on the same filesystem:
+Zotero 9–10 scan `<profile>/extensions/<add-on-id>.xpi` on startup, so development builds can be installed without UI automation. **Close Zotero first**, set the exact active profile explicitly, validate the archive, and replace it atomically on the same filesystem:
 
 Run from the repository root after selecting the active profile listed in `~/.zotero/zotero/profiles.ini`:
 
@@ -39,6 +39,6 @@ trap - EXIT
 
 The destination filename must exactly match the manifest ID `zotero-agentibility@local`. Do not edit `extensions.json`; Zotero discovers or upgrades the XPI on its next start. The earlier failed profile-placement attempt used a Zotero-9-incompatible manifest—the placement mechanism was not the fault. This profile replacement remains a development shortcut; normal releases use the manifest's GitHub `update_url` after the initial manual 0.4.1 installation.
 
-On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health` and fixed `metadata_resolve`, `fulltext_adopt`, and `fulltext_import`; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`.
+On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health` plus fixed `add_file`, `metadata_resolve`, `fulltext_adopt`, and `fulltext_import` operations; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`.
 
 Run `za-cli --json app doctor` after installation or an update; CLI and Extension patch versions may differ when bridge protocol 1 remains compatible.

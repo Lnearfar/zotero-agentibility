@@ -88,7 +88,7 @@ Zotero libraries are built around PDFs. Humans read PDFs just fine, but LLM-base
 ## 2. Installation
 
 ### Prerequisites
-The current release is Linux-only and supports Zotero 7–9. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
+The current release is Linux-only and supports Zotero 7–10. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
 
 
 ### Option 1: Install from the command line
@@ -316,4 +316,4 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 - CLI: catalog reads, sessions, source selection, bounded reading, local ONNX semantic search/index, fulltext audit/adopt/migrate.
 - Extension: bearer-authenticated loopback `health` and `fulltext_adopt`.
 - Skill: `research-with-zotero` agent workflow.
-- Linux-only, Zotero 7–9, Python 3.10+.
+- Linux-only, Zotero 7–10, Python 3.10+.
