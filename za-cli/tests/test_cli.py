@@ -24,6 +24,7 @@ class CliShapeTests(unittest.TestCase):
         result = CliRunner().invoke(cli, ["--help"])
         self.assertEqual(result.exit_code, 0, result.output)
         for summary in (
+            "add       Add local PDF and EPUB documents through Zotero.",
             "app       Inspect Zotero and required local tools.",
             "cd        Change this session's current Collection.",
             "find      Find exact text in the selected Full Text source.",
@@ -177,6 +178,70 @@ class CliShapeTests(unittest.TestCase):
             markdown_path="/tmp/book.md",
             markdown_sha256="c" * 64,
         )
+
+    @mock.patch("za_cli.cli.BridgeClient")
+    def test_add_file_requires_confirmation_before_bridge(self, bridge):
+        result = CliRunner().invoke(cli, [
+            "--json", "--session", "agent-1", "add", "file", "/tmp/paper.pdf",
+        ])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertEqual(json.loads(result.stderr)["code"], "CONFIRMATION_REQUIRED")
+        bridge.assert_not_called()
+
+    def test_confirmed_add_file_sends_reviewed_snapshot_and_queues_parent(self):
+        snapshot = {
+            "libraryID": 1,
+            "sourcePath": "/tmp/paper.pdf",
+            "expectedSha256": "b" * 64,
+            "contentType": "application/pdf",
+            "collectionKey": "COLL1234",
+            "parentItemKey": None,
+        }
+        with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
+             mock.patch("za_cli.cli._database"), \
+             mock.patch("za_cli.cli.sources.add_file_snapshot", return_value=snapshot), \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli.BridgeClient") as bridge:
+            queue.return_value.enqueue.return_value = {
+                "queued": True, "item_keys": ["PARENT44"], "events": 1,
+            }
+            bridge.return_value.add_file.return_value = {
+                "status": "added", "attachment_key": "NEWW2345", "parent_item_key": "PARENT44",
+            }
+            result = CliRunner().invoke(cli, [
+                "--json", "--session", "agent-1", "add", "file", "/tmp/paper.pdf",
+                "--collection", "COLL1234", "--confirm",
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        bridge.return_value.add_file.assert_called_once_with(
+            session_id="agent-1", library_id=1, source_path="/tmp/paper.pdf",
+            expected_sha256="b" * 64, collection_key="COLL1234", parent_item_key=None,
+        )
+        queue.return_value.enqueue.assert_called_once_with(["PARENT44"], reason="fulltext-mutation")
+        self.assertTrue(json.loads(result.stdout)["data"]["index"]["queued"])
+
+    def test_confirmed_unrecognized_add_does_not_queue_index(self):
+        snapshot = {
+            "libraryID": 1,
+            "sourcePath": "/tmp/paper.pdf",
+            "expectedSha256": "b" * 64,
+            "contentType": "application/pdf",
+            "collectionKey": None,
+            "parentItemKey": None,
+        }
+        with mock.patch("za_cli.cli._session", return_value={"id": "agent-1", "collection": None}), \
+             mock.patch("za_cli.cli._database"), \
+             mock.patch("za_cli.cli.sources.add_file_snapshot", return_value=snapshot), \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli.BridgeClient") as bridge:
+            bridge.return_value.add_file.return_value = {
+                "status": "added_unrecognized", "attachment_key": "NEWW2345", "parent_item_key": None,
+            }
+            result = CliRunner().invoke(cli, [
+                "--json", "--session", "agent-1", "add", "file", "/tmp/paper.pdf", "--confirm",
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        queue.return_value.enqueue.assert_not_called()
 
     @mock.patch("za_cli.cli.BridgeClient")
     def test_fulltext_adopt_requires_confirmation_before_bridge(self, bridge):

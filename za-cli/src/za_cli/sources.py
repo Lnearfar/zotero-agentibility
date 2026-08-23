@@ -22,6 +22,10 @@ from .poppler import extract_pdf
 
 FULLTEXT_TAG = "za-cli:md"
 SOURCE_TAG = "za-cli:pdf"
+DOCUMENT_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".epub": "application/epub+zip",
+}
 _KEY = re.compile(r"^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$")
 
 
@@ -318,6 +322,51 @@ def import_snapshot(
         "sourcePath": str(path),
         "expectedSha256": digest,
         "replaceAttachmentKeys": replacements,
+    }
+
+
+def add_file_snapshot(
+    db: Database,
+    source_path: Path,
+    collection_key: str | None = None,
+    parent_item_key: str | None = None,
+) -> dict:
+    """Validate a local PDF/EPUB before handing the write to Zotero."""
+    if collection_key is not None and not _KEY.fullmatch(collection_key):
+        raise CliError("INVALID_COLLECTION_KEY", "Collection Key must be a valid Zotero key")
+    if parent_item_key is not None and not _KEY.fullmatch(parent_item_key):
+        raise CliError("INVALID_ITEM_KEY", "Parent Item Key must be a valid Zotero key")
+    library_id = db.library_id()
+    if collection_key is not None and not db.collection_by_key(collection_key):
+        raise CliError("COLLECTION_NOT_FOUND", f"Collection not found: {collection_key}")
+    if parent_item_key is not None:
+        parent = db.lookup(parent_item_key)
+        if parent.get("typeName") in {"attachment", "note", "annotation"}:
+            raise CliError("INVALID_PARENT_ITEM", "Parent must be an active regular Literature Item")
+
+    path = source_path.expanduser()
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise CliError("DOCUMENT_FILE_MISSING", "Document source is missing or unsafe")
+        path = path.resolve(strict=True)
+    except OSError as exc:
+        raise CliError("DOCUMENT_FILE_MISSING", "Document source is missing or unsafe") from exc
+    content_type = DOCUMENT_CONTENT_TYPES.get(path.suffix.lower())
+    if content_type is None:
+        raise CliError("INVALID_DOCUMENT_SOURCE", "Add source must be a PDF or EPUB")
+    if len(str(path)) > 2048:
+        raise CliError("INVALID_DOCUMENT_SOURCE", "Document source path is too long")
+    try:
+        digest = _sha256_file(path)
+    except OSError as exc:
+        raise CliError("DOCUMENT_FILE_MISSING", "Document source became unreadable") from exc
+    return {
+        "libraryID": library_id,
+        "sourcePath": str(path),
+        "expectedSha256": digest,
+        "contentType": content_type,
+        "collectionKey": collection_key,
+        "parentItemKey": parent_item_key,
     }
 
 

@@ -58,6 +58,12 @@ class FakeDatabase:
     def standalone_attachment(self, key):
         return self._attachments[key][0]
 
+    def library_id(self):
+        return 1
+
+    def collection_by_key(self, key):
+        return {"key": key} if key == "CALL2345" else None
+
 
 class PreferredSourceTests(unittest.TestCase):
     def test_markdown_remains_preferred_after_pdfs_change(self):
@@ -304,6 +310,41 @@ class PreferredSourceTests(unittest.TestCase):
         self.assertEqual(snapshot["sourcePath"], str(source.resolve()))
         self.assertEqual(snapshot["replaceAttachmentKeys"], ["JKLM2345"])
         self.assertEqual(len(snapshot["expectedSha256"]), 64)
+
+    def test_add_file_snapshot_validates_pdf_and_carries_library_and_targets(self):
+        from za_cli.sources import add_file_snapshot
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "paper.PDF"
+            source.write_bytes(b"pdf")
+            snapshot = add_file_snapshot(
+                FakeDatabase({}), source, "CALL2345", "ABCD2345"
+            )
+        self.assertEqual(snapshot["libraryID"], 1)
+        self.assertEqual(snapshot["sourcePath"], str(source.resolve()))
+        self.assertEqual(snapshot["collectionKey"], "CALL2345")
+        self.assertEqual(snapshot["parentItemKey"], "ABCD2345")
+        self.assertEqual(snapshot["contentType"], "application/pdf")
+        self.assertEqual(len(snapshot["expectedSha256"]), 64)
+
+    def test_add_file_snapshot_rejects_non_document_and_symlink(self):
+        from za_cli.sources import add_file_snapshot
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "paper.txt"
+            source.write_text("not a document", encoding="utf-8")
+            with self.assertRaises(CliError) as caught:
+                add_file_snapshot(FakeDatabase({}), source)
+            self.assertEqual(caught.exception.code, "INVALID_DOCUMENT_SOURCE")
+            pdf = root / "paper.pdf"
+            pdf.write_bytes(b"pdf")
+            link = root / "link.pdf"
+            link.symlink_to(pdf)
+            with self.assertRaises(CliError) as caught:
+                add_file_snapshot(FakeDatabase({}), link)
+            self.assertEqual(caught.exception.code, "DOCUMENT_FILE_MISSING")
 
     def test_metadata_resolution_snapshot_hashes_document_and_markdown(self):
         with tempfile.TemporaryDirectory() as tmp:

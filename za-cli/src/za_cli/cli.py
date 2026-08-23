@@ -167,6 +167,38 @@ def _run_fulltext_write(ctx: click.Context, db: Database, item_key: str, write) 
     emit(ctx, result)
 
 
+def _run_add_file_write(ctx: click.Context, write) -> None:
+    try:
+        result = write()
+    except CliError as error:
+        if error.code != "AUDIT_LOG_FAILED_AFTER_WRITE":
+            raise
+        details = error.details or {}
+        parent_key = details.get("parent_item_key")
+        data: dict[str, Any] = {
+            "status": "committed_with_warning",
+            "errorCode": error.code,
+            "attachment_key": details.get("attachment_key"),
+            "parent_item_key": parent_key,
+            "collection_key": details.get("collection_key"),
+        }
+        if parent_key:
+            data["index"] = _queue_index_after_mutation(ctx, parent_key)
+        emit(ctx, data, ok=False, code=error.code)
+        ctx.exit(1)
+
+    parent_key = result.get("parent_item_key")
+    parent_changed = result.get("parent_changed", True)
+    if parent_key and parent_changed:
+        index_result = _queue_index_after_mutation(ctx, parent_key)
+        result["index"] = index_result
+        if index_result is not None and not index_result["ok"]:
+            result["status"] = "committed_with_index_warning"
+            emit(ctx, result, ok=False, code="INDEX_UPDATE_FAILED_AFTER_WRITE")
+            ctx.exit(1)
+    emit(ctx, result)
+
+
 def _session(ctx: click.Context) -> dict:
     config = _config(ctx)
     if not config.session_id:
@@ -517,6 +549,43 @@ def search_command(
     runtime = _index_queue(ctx).runtime_status()
     result.setdefault("index", {})["refreshing"] = runtime["refreshing"]
     emit(ctx, result)
+
+
+@cli.group("add")
+def add_group() -> None:
+    """Add local PDF and EPUB documents through Zotero."""
+
+
+@add_group.command("file", help="Add one local PDF or EPUB document.")
+@click.argument("path", type=click.Path(path_type=Path))
+@click.option("--collection", "collection_key", help="Add the new item to this Collection Key.")
+@click.option("--parent", "parent_item_key", help="Attach to this existing Literature Item Key without recognition.")
+@click.option("--confirm", is_flag=True, help="Confirm the recoverable Zotero mutation.")
+@click.pass_context
+def add_file(
+    ctx: click.Context,
+    path: Path,
+    collection_key: str | None,
+    parent_item_key: str | None,
+    confirm: bool,
+) -> None:
+    if not confirm:
+        raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to add a local document")
+    state = _session(ctx)
+    config = _config(ctx)
+    db = _database(ctx)
+    snapshot = sources.add_file_snapshot(db, path, collection_key, parent_item_key)
+    _run_add_file_write(
+        ctx,
+        lambda: BridgeClient(config.port, config.config_dir / "bridge-token").add_file(
+            session_id=state["id"],
+            library_id=snapshot["libraryID"],
+            source_path=snapshot["sourcePath"],
+            expected_sha256=snapshot["expectedSha256"],
+            collection_key=snapshot["collectionKey"],
+            parent_item_key=snapshot["parentItemKey"],
+        ),
+    )
 
 
 @cli.command("resolve", help="Create a verified parent item for a standalone PDF or EPUB.")

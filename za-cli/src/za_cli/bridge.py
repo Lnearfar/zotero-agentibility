@@ -9,7 +9,7 @@ from .errors import CliError
 from .http import request
 
 PROTOCOL = 1
-OPERATIONS = {"health", "fulltext_adopt", "fulltext_import", "metadata_resolve"}
+OPERATIONS = {"health", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file"}
 PATH = "/zotero-agentibility/v1/operation"
 _TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -108,6 +108,32 @@ class BridgeClient:
 
     def health(self) -> dict:
         return self.operation("health", {})
+
+    def add_file(
+        self,
+        *,
+        session_id: str,
+        library_id: int,
+        source_path: str,
+        expected_sha256: str,
+        collection_key: str | None,
+        parent_item_key: str | None,
+    ) -> dict:
+        response = self.operation("add_file", {
+            "session_id": session_id,
+            "library_id": library_id,
+            "source_path": source_path,
+            "expected_sha256": expected_sha256,
+            "collection_key": collection_key,
+            "parent_item_key": parent_item_key,
+        })
+        if response.get("operation") != "add_file" or not isinstance(response.get("result"), dict):
+            raise CliError(
+                "WRITE_OUTCOME_UNKNOWN",
+                "Zotero returned an invalid document-add result; inspect the source before retrying",
+                details={"retryable": False},
+            )
+        return response["result"]
 
     def metadata_resolve(
         self,
