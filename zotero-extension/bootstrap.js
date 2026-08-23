@@ -338,12 +338,33 @@ function _identifierKeys(identifiers) {
 }
 
 async function _activeLibraryItems(libraryID) {
-  var ids = await Zotero.Items.getAllIDs(libraryID);
-  var items = await Zotero.Items.getAsync(ids);
+  var items = await Zotero.Items.getAll(libraryID, false, false);
   if (!Array.isArray(items)) items = items ? [items] : [];
   return items.filter(function (item) {
     return item && !item.deleted && item.libraryID === libraryID;
   });
+}
+
+async function _activeStoredDocumentFile(item) {
+  if (!item || !item.isAttachment || !item.isAttachment()
+      || item.attachmentLinkMode !== Zotero.Attachments.LINK_MODE_IMPORTED_FILE
+      || (!item.isPDFAttachment() && !item.isEPUBAttachment())) {
+    return null;
+  }
+  if (item.parentItemID) {
+    var parent = await Zotero.Items.getAsync(item.parentItemID);
+    if (!parent || parent.deleted) return null;
+  }
+  try {
+    var path = await item.getFilePathAsync();
+    if (!path) return null;
+    var file = Zotero.File.pathToFile(path);
+    if (!file.exists() || !file.isFile() || file.isSymlink()) return null;
+    return file;
+  }
+  catch (error) {
+    return null;
+  }
 }
 
 async function _findStrongIdentifierMatches(libraryID, candidate, excludeID) {
@@ -366,25 +387,24 @@ async function _findStrongIdentifierMatches(libraryID, candidate, excludeID) {
   return matches;
 }
 
-async function _findAttachmentByHash(libraryID, hash) {
+async function _findAttachmentsByHash(libraryID, hash, fileSize) {
   var items = await _activeLibraryItems(libraryID);
+  var matches = [];
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
-    if (!item.isAttachment || !item.isAttachment() || !item.isFileAttachment || !item.isFileAttachment()) {
-      continue;
-    }
-    if (!item.isPDFAttachment() && !item.isEPUBAttachment()) continue;
+    var file = await _activeStoredDocumentFile(item);
+    if (!file || Number(file.fileSize) !== Number(fileSize)) continue;
     try {
       var existingHash = await item.attachmentHash;
       if (existingHash && String(existingHash).toLowerCase() === String(hash).toLowerCase()) {
-        return item;
+        matches.push(item);
       }
     }
     catch (error) {
       Zotero.debug("[Zotero-Agentibility] skipping unreadable attachment hash");
     }
   }
-  return null;
+  return matches;
 }
 
 async function _sourceDocument(item) {
@@ -392,14 +412,7 @@ async function _sourceDocument(item) {
   var children = await Zotero.Items.getAsync(item.getAttachments(false));
   if (!Array.isArray(children)) children = children ? [children] : [];
   for (var i = 0; i < children.length; i++) await children[i].loadDataType("tags");
-  var documents = children.filter(function (child) {
-    return child && !child.deleted && child.isFileAttachment && child.isFileAttachment()
-      && (child.isPDFAttachment() || child.isEPUBAttachment());
-  });
-  var marked = documents.filter(function (child) { return _hasTag(child, SOURCE_TAG); });
-  if (marked.length === 1) return marked[0];
-  if (marked.length > 1 || documents.length > 1) return { ambiguous: true, items: documents };
-  return documents.length === 1 ? documents[0] : null;
+  return _sourceDocumentFromChildren(children);
 }
 
 async function _addCollectionMembership(item, collection) {
@@ -448,7 +461,7 @@ async function _discardMetadataCandidate(candidate) {
   try {
     await candidate.reload(["primaryData", "childItems"], true);
     if (candidate.getAttachments().length || candidate.getNotes().length) throw new Error("candidate gained children");
-    await Zotero.DB.executeTransaction(async function () { await candidate.erase(); });
+    await candidate.eraseTx();
   }
   catch (error) {
     throw _operationError("ROLLBACK_FAILED", "Could not remove the rejected metadata candidate", 500,
@@ -470,7 +483,9 @@ async function _attachMetadataCandidate(attachment, candidate, args) {
     attachment.getCollections().forEach(function (collectionID) { candidate.addToCollection(collectionID); });
     await candidate.save();
     attachment.parentID = candidate.id;
-    if (!_hasTag(attachment, SOURCE_TAG)) attachment.addTag(SOURCE_TAG, 0);
+    if (attachment.isPDFAttachment() && !_hasTag(attachment, SOURCE_TAG)) {
+      attachment.addTag(SOURCE_TAG, 0);
+    }
     await attachment.save();
   });
 }
@@ -624,11 +639,12 @@ async function _addFileContext(args) {
   return { libraryID: libraryID, collection: collection, parent: parent };
 }
 
-function _addFileExpectedContentType(path) {
-  return String(path).toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/epub+zip";
+function _isAddFileContentType(contentType) {
+  contentType = String(contentType || "").toLowerCase();
+  return contentType === "application/pdf" || contentType === "application/epub+zip";
 }
 
-function _validateAddFilePath(args) {
+async function _validateAddFilePath(args) {
   var file;
   try {
     file = Zotero.File.pathToFile(args.source_path);
@@ -642,16 +658,30 @@ function _validateAddFilePath(args) {
   if (_sha256File(file.path) !== args.expected_sha256) {
     throw _operationError("STALE_SOURCE_HASH", "Document source changed after review", 409);
   }
-  return file;
+  var contentType;
+  try {
+    contentType = String(await Zotero.MIME.getMIMETypeFromFile(file) || "").toLowerCase();
+  }
+  catch (error) {
+    throw _operationError("INVALID_DOCUMENT_SOURCE", "Zotero could not detect a PDF or EPUB source", 409);
+  }
+  if (!_isAddFileContentType(contentType)) {
+    throw _operationError("INVALID_DOCUMENT_SOURCE", "Add source must be a native PDF or EPUB", 409,
+      false, { content_type: contentType || null });
+  }
+  return { file: file, contentType: contentType };
 }
 
-async function _validateImportedDocument(item, args, libraryID) {
+async function _validateImportedDocument(item, args, libraryID, contentType, expectedAttachmentHash) {
   await item.reload(["primaryData"], true);
   var file = await _attachmentFile(item);
-  var expectedType = _addFileExpectedContentType(args.source_path);
+  var attachmentHash = null;
+  try { attachmentHash = await item.attachmentHash; }
+  catch (error) {}
   if (item.libraryID !== libraryID
       || item.attachmentLinkMode !== Zotero.Attachments.LINK_MODE_IMPORTED_FILE
-      || String(item.attachmentContentType || "").toLowerCase() !== expectedType
+      || String(item.attachmentContentType || "").toLowerCase() !== contentType
+      || String(attachmentHash || "").toLowerCase() !== String(expectedAttachmentHash || "").toLowerCase()
       || _sha256File(file.path) !== args.expected_sha256) {
     throw _operationError("IMPORTED_DOCUMENT_INVALID", "Imported document failed validation", 500,
       false, { attachment_key: item.key });
@@ -659,22 +689,22 @@ async function _validateImportedDocument(item, args, libraryID) {
   return file;
 }
 
-async function _trashAddedItem(item) {
+async function _eraseAddedItem(item) {
   if (!item) return;
   await item.reload(["primaryData"], true);
-  if (!item.deleted) await Zotero.Items.trashTx(item.id);
+  if (!item.deleted) await item.eraseTx();
 }
 
 async function _cleanupAddedItems(imported, candidate) {
   var firstError = null;
   try {
-    await _trashAddedItem(candidate);
+    await _eraseAddedItem(imported);
   }
   catch (error) {
     firstError = error;
   }
   try {
-    await _trashImported(imported);
+    if (candidate) await _discardMetadataCandidate(candidate);
   }
   catch (error) {
     firstError = firstError || error;
@@ -682,15 +712,37 @@ async function _cleanupAddedItems(imported, candidate) {
   if (firstError) throw firstError;
 }
 
+function _sourceDocumentFromChildren(children) {
+  var documents = children.filter(function (child) {
+    return child && !child.deleted
+      && child.isFileAttachment && child.isFileAttachment()
+      && (child.isPDFAttachment() || child.isEPUBAttachment());
+  });
+  var marked = documents.filter(function (child) { return _hasTag(child, SOURCE_TAG); });
+  if (marked.length === 1) return marked[0];
+  if (marked.length > 1 || documents.length > 1) return { ambiguous: true, items: documents };
+  return documents.length === 1 ? documents[0] : null;
+}
+
 async function _attachAddedToParent(imported, parent, collection) {
-  var changed = true;
+  var selectedSourceKey = null;
   await Zotero.DB.executeTransaction(async function () {
-    await parent.reload(["primaryData", "collections"], true);
+    await parent.reload(["primaryData", "collections", "childItems"], true);
     await imported.reload(["primaryData", "tags"], true);
     if (parent.deleted || imported.deleted || imported.parentItemID) {
       throw _operationError("STALE_ITEM", "Document or parent changed before the write committed", 409);
     }
-    imported.addTag(SOURCE_TAG, 0);
+    var children = await Zotero.Items.getAsync(parent.getAttachments(false));
+    if (!Array.isArray(children)) children = children ? [children] : [];
+    for (var i = 0; i < children.length; i++) await children[i].loadDataType("tags");
+    var source = _sourceDocumentFromChildren(children);
+    if (!source) {
+      selectedSourceKey = imported.key;
+      if (imported.isPDFAttachment()) imported.addTag(SOURCE_TAG, 0);
+    }
+    else if (!source.ambiguous) {
+      selectedSourceKey = source.key;
+    }
     imported.parentID = parent.id;
     await imported.save({ skipSelect: true });
     if (collection && parent.getCollections().indexOf(collection.id) === -1) {
@@ -698,7 +750,7 @@ async function _attachAddedToParent(imported, parent, collection) {
       await parent.save({ skipSelect: true });
     }
   });
-  return changed;
+  return { parent_changed: true, source_document_key: selectedSourceKey };
 }
 
 async function _reuseAddedAttachment(existing, requestedParent, collection, args) {
@@ -714,7 +766,7 @@ async function _reuseAddedAttachment(existing, requestedParent, collection, args
   var target = existingParent || existing;
   var parentChanged = await _addCollectionMembership(target, collection);
   return {
-    status: "reused",
+    outcome: "reused",
     library_id: args.library_id,
     attachment_key: existing.key,
     parent_item_key: existingParent ? existingParent.key : null,
@@ -724,41 +776,84 @@ async function _reuseAddedAttachment(existing, requestedParent, collection, args
   };
 }
 
+async function _reuseStrongSource(source, matched, collection, args, identifier, incomingHash) {
+  await matched.reload(["primaryData", "childItems"], true);
+  var liveSource = await _sourceDocument(matched);
+  var sourceHash = null;
+  if (liveSource && !liveSource.ambiguous) {
+    try { sourceHash = await liveSource.attachmentHash; }
+    catch (error) { sourceHash = null; }
+  }
+  if (!liveSource || liveSource.ambiguous || liveSource.key !== source.key
+      || !sourceHash || String(sourceHash).toLowerCase() !== String(incomingHash).toLowerCase()) {
+    throw _operationError("SOURCE_DOCUMENT_CONFLICT", "Strong Identifier already has a different Source Document", 409,
+      false, {
+        identifier: identifier.key,
+        existing_item_key: matched.key,
+        existing_source_document_key: liveSource && !liveSource.ambiguous ? liveSource.key : null
+      });
+  }
+  return {
+    outcome: "reused",
+    library_id: args.library_id,
+    attachment_key: liveSource.key,
+    parent_item_key: matched.key,
+    collection_key: args.collection_key,
+    resolution: "strong_identifier",
+    source_document_key: liveSource.key,
+    parent_changed: await _addCollectionMembership(matched, collection),
+    warnings: []
+  };
+}
+
 async function _addFile(args) {
   var context = await _addFileContext(args);
-  _validateAddFilePath(args);
-  var nativeHash = await Zotero.Utilities.Internal.md5Async(args.source_path);
-  var existing = await _findAttachmentByHash(context.libraryID, nativeHash);
-  if (existing) {
-    return _reuseAddedAttachment(existing, context.parent, context.collection, args);
+  var sourceReview = await _validateAddFilePath(args);
+  var nativeHash = await Zotero.Utilities.Internal.md5Async(sourceReview.file.path);
+  var existingMatches = await _findAttachmentsByHash(
+    context.libraryID, nativeHash, sourceReview.file.fileSize
+  );
+  if (existingMatches.length > 1) {
+    throw _operationError("IDENTICAL_ATTACHMENT_AMBIGUOUS",
+      "Identical active PDF or EPUB attachments have multiple matches", 409, false,
+      { attachment_keys: existingMatches.map(function (item) { return item.key; }) });
+  }
+  if (existingMatches.length === 1) {
+    return _reuseAddedAttachment(existingMatches[0], context.parent, context.collection, args);
   }
 
   var imported = null;
+  var importedKey = null;
   var candidate = null;
   var committed = false;
+  var erasedIncomingKey = null;
   try {
     var importOptions = {
       file: args.source_path,
       libraryID: context.libraryID,
-      contentType: _addFileExpectedContentType(args.source_path),
       saveOptions: { skipSelect: true }
     };
-    if (context.parent) importOptions.parentItemID = context.parent.id;
-    else if (context.collection) importOptions.collections = [context.collection.id];
+    if (!context.parent && context.collection) {
+      importOptions.collections = [context.collection.id];
+    }
     imported = await Zotero.Attachments.importFromFile(importOptions);
-    await _validateImportedDocument(imported, args, context.libraryID);
+    importedKey = imported.key;
+    await _validateImportedDocument(
+      imported, args, context.libraryID, sourceReview.contentType, nativeHash
+    );
 
     if (context.parent) {
-      await _attachAddedToParent(imported, context.parent, context.collection);
+      var parentAttachment = await _attachAddedToParent(imported, context.parent, context.collection);
       committed = true;
       return {
-        status: "added",
+        outcome: "added",
         library_id: args.library_id,
         attachment_key: imported.key,
         parent_item_key: context.parent.key,
         collection_key: args.collection_key,
         resolution: "parent",
-        parent_changed: true,
+        source_document_key: parentAttachment.source_document_key,
+        parent_changed: parentAttachment.parent_changed,
         warnings: []
       };
     }
@@ -777,16 +872,14 @@ async function _addFile(args) {
         candidate = null;
       }
       await Zotero.DB.executeTransaction(async function () {
-        await imported.reload(["primaryData", "tags"], true);
+        await imported.reload(["primaryData"], true);
         if (imported.deleted || imported.parentItemID) {
           throw _operationError("STALE_DOCUMENT", "Standalone document changed before commit", 409);
         }
-        imported.addTag(SOURCE_TAG, 0);
-        await imported.save({ skipSelect: true });
       });
       committed = true;
       return {
-        status: "added_unrecognized",
+        outcome: "added_unrecognized",
         library_id: args.library_id,
         attachment_key: imported.key,
         parent_item_key: null,
@@ -802,7 +895,11 @@ async function _addFile(args) {
       await _discardMetadataCandidate(candidate);
       candidate = null;
       throw _operationError("STRONG_IDENTIFIER_CONFLICT", "Strong Identifier matches multiple existing Literature Items", 409,
-        false, { candidate_item_key: imported.key, existing_item_keys: matches.map(function (match) { return match.item.key; }) });
+        false, {
+          identifier: matches[0].identifier.key,
+          incoming_attachment_key: imported.key,
+          existing_item_keys: matches.map(function (match) { return match.item.key; })
+        });
     }
     if (matches.length === 1) {
       var matched = matches[0].item;
@@ -811,6 +908,19 @@ async function _addFile(args) {
       if (source && !source.ambiguous) {
         try { sourceHash = await source.attachmentHash; }
         catch (error) { sourceHash = null; }
+      }
+      if (source && !source.ambiguous && sourceHash
+          && String(sourceHash).toLowerCase() === String(nativeHash).toLowerCase()) {
+        await _discardMetadataCandidate(candidate);
+        candidate = null;
+        await _eraseAddedItem(imported);
+        erasedIncomingKey = imported.key;
+        imported = null;
+        var sourceReuse = await _reuseStrongSource(
+          source, matched, context.collection, args, matches[0].identifier, nativeHash
+        );
+        committed = true;
+        return sourceReuse;
       }
       if (source && (source.ambiguous || !sourceHash
           || String(sourceHash).toLowerCase() !== String(nativeHash).toLowerCase())) {
@@ -827,16 +937,17 @@ async function _addFile(args) {
       }
       await _discardMetadataCandidate(candidate);
       candidate = null;
-      await _attachAddedToParent(imported, matched, context.collection);
+      var reusedAttachment = await _attachAddedToParent(imported, matched, context.collection);
       committed = true;
       return {
-        status: "reused",
+        outcome: "reused",
         library_id: args.library_id,
         attachment_key: imported.key,
         parent_item_key: matched.key,
         collection_key: args.collection_key,
         resolution: "strong_identifier",
-        parent_changed: true,
+        source_document_key: reusedAttachment.source_document_key,
+        parent_changed: reusedAttachment.parent_changed,
         warnings: []
       };
     }
@@ -853,7 +964,7 @@ async function _addFile(args) {
     var warnings = await _duplicateWarnings(context.libraryID, candidate);
     committed = true;
     return {
-      status: "added",
+      outcome: "added",
       library_id: args.library_id,
       attachment_key: imported.key,
       parent_item_key: candidate.key,
@@ -864,21 +975,23 @@ async function _addFile(args) {
     };
   }
   catch (error) {
-    if (!committed && (imported || candidate)) {
+    if (!committed && (imported || candidate || erasedIncomingKey)) {
       try {
-        await _cleanupAddedItems(imported, candidate);
+        if (imported || candidate) await _cleanupAddedItems(imported, candidate);
       }
       catch (rollbackError) {
         throw _operationError("ROLLBACK_FAILED", "Could not roll back the failed document add", 500,
           false, {
-            attachment_key: imported ? imported.key : null,
+            attachment_key: imported ? imported.key : erasedIncomingKey,
             parent_item_key: candidate ? candidate.key : null,
             rollback_result: "failed"
           });
       }
-      if (error && error.safeDetails) {
-        error.safeDetails.rollback_attachment_key = imported ? imported.key : null;
-        error.safeDetails.rollback_result = "trashed";
+      if (error && typeof error === "object") {
+        error.safeDetails = Object.assign({}, error.safeDetails || {}, {
+          rollback_attachment_key: imported ? imported.key : erasedIncomingKey,
+          rollback_result: "erased"
+        });
       }
     }
     throw error;
@@ -917,6 +1030,7 @@ async function _executeAddFile(args) {
     catch (auditError) {
       throw _operationError("AUDIT_LOG_FAILED_AFTER_WRITE", "Document was added but the audit record could not be appended", 500,
         false, {
+          outcome: result.outcome,
           attachment_key: result.attachment_key,
           parent_item_key: result.parent_item_key,
           collection_key: result.collection_key

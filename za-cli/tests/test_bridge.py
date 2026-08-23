@@ -82,7 +82,7 @@ class BridgeTests(unittest.TestCase):
     @mock.patch("za_cli.http.urllib.request.build_opener")
     def test_add_file_uses_fixed_authenticated_schema(self, build_opener):
         build_opener.return_value.open.return_value = FakeResponse(
-            b'{"ok":true,"protocol":1,"operation":"add_file","result":{"status":"added_unrecognized","attachment_key":"NEWW2345"}}'
+            b'{"ok":true,"protocol":1,"operation":"add_file","result":{"outcome":"added_unrecognized","attachment_key":"NEWW2345"}}'
         )
         with tempfile.TemporaryDirectory() as tmp:
             token = Path(tmp) / "bridge-token"
@@ -109,7 +109,27 @@ class BridgeTests(unittest.TestCase):
                 "parent_item_key": None,
             },
         })
-        self.assertEqual(result["status"], "added_unrecognized")
+        self.assertEqual(result["outcome"], "added_unrecognized")
+
+    @mock.patch("za_cli.http.urllib.request.build_opener")
+    def test_add_file_rejects_legacy_status_result(self, build_opener):
+        build_opener.return_value.open.return_value = FakeResponse(
+            b'{"ok":true,"protocol":1,"operation":"add_file","result":{"status":"added","attachment_key":"NEWW2345"}}'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "bridge-token"
+            token.write_text("a" * 64 + "\n", encoding="utf-8")
+            os.chmod(token, 0o600)
+            with self.assertRaises(CliError) as caught:
+                BridgeClient(23119, token).add_file(
+                    session_id="agent-1",
+                    library_id=1,
+                    source_path="/tmp/paper.pdf",
+                    expected_sha256="b" * 64,
+                    collection_key=None,
+                    parent_item_key=None,
+                )
+        self.assertEqual(caught.exception.code, "WRITE_OUTCOME_UNKNOWN")
 
     @mock.patch("za_cli.http.urllib.request.build_opener")
     def test_fulltext_adopt_uses_fixed_authenticated_schema(self, build_opener):

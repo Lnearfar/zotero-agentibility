@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -326,7 +327,7 @@ class PreferredSourceTests(unittest.TestCase):
         self.assertEqual(snapshot["collectionKey"], "CALL2345")
         self.assertEqual(snapshot["parentItemKey"], "ABCD2345")
         self.assertEqual(snapshot["contentType"], "application/pdf")
-        self.assertEqual(len(snapshot["expectedSha256"]), 64)
+        self.assertEqual(snapshot["expectedSha256"], hashlib.sha256(b"pdf").hexdigest())
 
     def test_add_file_snapshot_rejects_non_document_and_symlink(self):
         from za_cli.sources import add_file_snapshot

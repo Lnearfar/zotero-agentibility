@@ -128,9 +128,11 @@ def _index_queue(ctx: click.Context):
     return IndexQueue(default_index_path(_config(ctx).data_dir))
 
 
-def _queue_index_after_mutation(ctx: click.Context, item_key: str, queue=None) -> dict[str, Any]:
+def _queue_index_after_mutation(
+    ctx: click.Context, item_key: str, queue=None, *, reason: str = "fulltext-mutation"
+) -> dict[str, Any]:
     try:
-        result = (queue or _index_queue(ctx)).enqueue([item_key], reason="fulltext-mutation")
+        result = (queue or _index_queue(ctx)).enqueue([item_key], reason=reason)
         return {"ok": True, **result}
     except Exception as error:
         return {
@@ -183,14 +185,17 @@ def _run_add_file_write(ctx: click.Context, write) -> None:
             "collection_key": details.get("collection_key"),
         }
         if parent_key:
-            data["index"] = _queue_index_after_mutation(ctx, parent_key)
+            data["index"] = _queue_index_after_mutation(ctx, parent_key, reason="document-add")
+        if details.get("outcome") is not None:
+            data["outcome"] = details["outcome"]
         emit(ctx, data, ok=False, code=error.code)
         ctx.exit(1)
 
+    result.pop("status", None)
     parent_key = result.get("parent_item_key")
-    parent_changed = result.get("parent_changed", True)
+    parent_changed = result.pop("parent_changed", True)
     if parent_key and parent_changed:
-        index_result = _queue_index_after_mutation(ctx, parent_key)
+        index_result = _queue_index_after_mutation(ctx, parent_key, reason="document-add")
         result["index"] = index_result
         if index_result is not None and not index_result["ok"]:
             result["status"] = "committed_with_index_warning"

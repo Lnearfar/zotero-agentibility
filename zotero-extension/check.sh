@@ -28,6 +28,10 @@ require bootstrap.js 'source_path'
 require bootstrap.js 'add_file'
 require bootstrap.js 'library_id'
 require bootstrap.js 'Zotero.Utilities.Internal.md5Async'
+require bootstrap.js 'Zotero.MIME.getMIMETypeFromFile(file)'
+require bootstrap.js 'await item.eraseTx();'
+require bootstrap.js 'IDENTICAL_ATTACHMENT_AMBIGUOUS'
+require bootstrap.js 'outcome: "added_unrecognized"'
 require bootstrap.js 'new Zotero.Duplicates(libraryID)'
 require bootstrap.js 'Zotero.RecognizeDocument._recognize'
 require bootstrap.js 'Zotero.RecognizeDocument.canRecognize'
@@ -54,6 +58,18 @@ require bootstrap.js 'hash.SHA256'
 require bootstrap.js 'audit.jsonl'
 if grep -Eq 'Zotero\.DB\.(queryAsync|executeSQL)|OS\.File\.(copy|move|write)|IOUtils\.write' bootstrap.js; then
   printf 'bootstrap.js contains prohibited direct database or storage writes\n' >&2
+  exit 1
+fi
+if sed -n '/async function _cleanupAddedItems/,/function _sourceDocumentFromChildren/p' bootstrap.js | grep -Fq '_trashImported'; then
+  printf 'add_file rollback must erase new items, not call _trashImported\n' >&2
+  exit 1
+fi
+if sed -n '/var identifiers = candidate ?/,/var matches =/p' bootstrap.js | grep -Fq 'addTag(SOURCE_TAG'; then
+  printf 'unrecognized document branch must not add the Source Document marker\n' >&2
+  exit 1
+fi
+if sed -n '/async function _addFile(args)/,/async function _executeAddFile/p' bootstrap.js | grep -Eq '^[[:space:]]*contentType[[:space:]]*:'; then
+  printf 'add_file import must let Zotero detect native MIME type\n' >&2
   exit 1
 fi
 if grep -Eq '(^|[^[:alnum:]_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\(' bootstrap.js; then

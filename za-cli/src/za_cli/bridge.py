@@ -127,13 +127,15 @@ class BridgeClient:
             "collection_key": collection_key,
             "parent_item_key": parent_item_key,
         })
-        if response.get("operation") != "add_file" or not isinstance(response.get("result"), dict):
+        result = response.get("result")
+        if response.get("operation") != "add_file" or not isinstance(result, dict) \
+                or result.get("outcome") not in {"added", "added_unrecognized", "reused"}:
             raise CliError(
                 "WRITE_OUTCOME_UNKNOWN",
                 "Zotero returned an invalid document-add result; inspect the source before retrying",
                 details={"retryable": False},
             )
-        return response["result"]
+        return result
 
     def metadata_resolve(
         self,

@@ -206,7 +206,8 @@ class CliShapeTests(unittest.TestCase):
                 "queued": True, "item_keys": ["PARENT44"], "events": 1,
             }
             bridge.return_value.add_file.return_value = {
-                "status": "added", "attachment_key": "NEWW2345", "parent_item_key": "PARENT44",
+                "outcome": "added", "status": "added", "attachment_key": "NEWW2345", "parent_item_key": "PARENT44",
+                "parent_changed": True,
             }
             result = CliRunner().invoke(cli, [
                 "--json", "--session", "agent-1", "add", "file", "/tmp/paper.pdf",
@@ -217,8 +218,12 @@ class CliShapeTests(unittest.TestCase):
             session_id="agent-1", library_id=1, source_path="/tmp/paper.pdf",
             expected_sha256="b" * 64, collection_key="COLL1234", parent_item_key=None,
         )
-        queue.return_value.enqueue.assert_called_once_with(["PARENT44"], reason="fulltext-mutation")
-        self.assertTrue(json.loads(result.stdout)["data"]["index"]["queued"])
+        queue.return_value.enqueue.assert_called_once_with(["PARENT44"], reason="document-add")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["data"]["outcome"], "added")
+        self.assertNotIn("status", payload["data"])
+        self.assertNotIn("parent_changed", payload["data"])
+        self.assertTrue(payload["data"]["index"]["queued"])
 
     def test_confirmed_unrecognized_add_does_not_queue_index(self):
         snapshot = {
@@ -235,13 +240,18 @@ class CliShapeTests(unittest.TestCase):
              mock.patch("za_cli.cli._index_queue") as queue, \
              mock.patch("za_cli.cli.BridgeClient") as bridge:
             bridge.return_value.add_file.return_value = {
-                "status": "added_unrecognized", "attachment_key": "NEWW2345", "parent_item_key": None,
+                "outcome": "added_unrecognized", "attachment_key": "NEWW2345", "parent_item_key": None,
+                "parent_changed": False,
             }
             result = CliRunner().invoke(cli, [
                 "--json", "--session", "agent-1", "add", "file", "/tmp/paper.pdf", "--confirm",
             ])
         self.assertEqual(result.exit_code, 0, result.output)
         queue.return_value.enqueue.assert_not_called()
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["data"]["outcome"], "added_unrecognized")
+        self.assertNotIn("status", payload["data"])
+        self.assertNotIn("parent_changed", payload["data"])
 
     @mock.patch("za_cli.cli.BridgeClient")
     def test_fulltext_adopt_requires_confirmation_before_bridge(self, bridge):
