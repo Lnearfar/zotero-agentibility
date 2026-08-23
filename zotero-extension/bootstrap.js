@@ -724,7 +724,9 @@ function _sourceDocumentFromChildren(children) {
   return documents.length === 1 ? documents[0] : null;
 }
 
-async function _attachAddedToParent(imported, parent, collection) {
+async function _attachAddedToParent(
+  imported, parent, collection, args, libraryID, contentType, expectedAttachmentHash
+) {
   var selectedSourceKey = null;
   await Zotero.DB.executeTransaction(async function () {
     await parent.reload(["primaryData", "collections", "childItems"], true);
@@ -732,6 +734,9 @@ async function _attachAddedToParent(imported, parent, collection) {
     if (parent.deleted || imported.deleted || imported.parentItemID) {
       throw _operationError("STALE_ITEM", "Document or parent changed before the write committed", 409);
     }
+    await _validateImportedDocument(
+      imported, args, libraryID, contentType, expectedAttachmentHash
+    );
     var children = await Zotero.Items.getAsync(parent.getAttachments(false));
     if (!Array.isArray(children)) children = children ? [children] : [];
     for (var i = 0; i < children.length; i++) await children[i].loadDataType("tags");
@@ -823,7 +828,6 @@ async function _addFile(args) {
   }
 
   var imported = null;
-  var importedKey = null;
   var candidate = null;
   var committed = false;
   var erasedIncomingKey = null;
@@ -837,13 +841,15 @@ async function _addFile(args) {
       importOptions.collections = [context.collection.id];
     }
     imported = await Zotero.Attachments.importFromFile(importOptions);
-    importedKey = imported.key;
-    await _validateImportedDocument(
+    var importedFile = await _validateImportedDocument(
       imported, args, context.libraryID, sourceReview.contentType, nativeHash
     );
 
     if (context.parent) {
-      var parentAttachment = await _attachAddedToParent(imported, context.parent, context.collection);
+      var parentAttachment = await _attachAddedToParent(
+        imported, context.parent, context.collection, args, context.libraryID,
+        sourceReview.contentType, nativeHash
+      );
       committed = true;
       return {
         outcome: "added",
@@ -876,6 +882,9 @@ async function _addFile(args) {
         if (imported.deleted || imported.parentItemID) {
           throw _operationError("STALE_DOCUMENT", "Standalone document changed before commit", 409);
         }
+        await _validateImportedDocument(
+          imported, args, context.libraryID, sourceReview.contentType, nativeHash
+        );
       });
       committed = true;
       return {
@@ -937,7 +946,10 @@ async function _addFile(args) {
       }
       await _discardMetadataCandidate(candidate);
       candidate = null;
-      var reusedAttachment = await _attachAddedToParent(imported, matched, context.collection);
+      var reusedAttachment = await _attachAddedToParent(
+        imported, matched, context.collection, args, context.libraryID,
+        sourceReview.contentType, nativeHash
+      );
       committed = true;
       return {
         outcome: "reused",
@@ -957,7 +969,7 @@ async function _addFile(args) {
       candidate.setCollections([]);
     }
     var attachmentArgs = {
-      expected_path: args.source_path,
+      expected_path: importedFile.path,
       expected_sha256: args.expected_sha256
     };
     await _attachMetadataCandidate(imported, candidate, attachmentArgs);
