@@ -2,6 +2,12 @@
 
 A literature library that lets people and agents work from the same Zotero-managed records and synchronized full text.
 
+## Project principle
+
+**Human intent, Zotero ownership**:
+The human researcher directs goals and policy; Zotero is the sole system of record and owner of library data, attachment storage, synchronization state, and transactions. Zotero-Agentibility may expose broad, fine-grained Agent control—including discovery assistance, adding documents, metadata resolution, organization, and duplicate handling—but every mutation remains visible, policy-controlled, and executed through a fixed validated Zotero-native operation. Read-only catalog access may accelerate retrieval but never becomes a write path.
+_Avoid_: direct SQLite or storage writes, arbitrary JavaScript execution, hidden mutations, an independent literature database, treating an Agent's working files as a second source of truth
+
 ## Language
 
 **Literature Item**:

@@ -2,7 +2,7 @@
 
 # Zotero Agentibility
 
-Making Zotero natively and safely operable for your AI agent — CLI, Skill, and Markdown integration, all in one.
+Making human-directed Zotero workflows natively and safely operable by AI agents — CLI, Skill, and Markdown integration.
 
 [Introduction](#1-introduction) · [Installation](#2-installation) · [Use cases](#use-cases) · [CLI reference](#3-cli-reference) · [Uninstall](#uninstall)
 

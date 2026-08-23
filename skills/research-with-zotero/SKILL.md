@@ -1,13 +1,13 @@
 ---
 name: research-with-zotero
-description: Use when searching, navigating, reading, verifying, organizing, importing, deduplicating, or managing full-text literature in a local Zotero library through za-cli.
+description: Use when helping a researcher search, navigate, read, verify, and manage full-text literature in a local Zotero library through za-cli.
 license: Apache-2.0
 compatibility: Linux; requires Zotero Desktop running, za-cli, the matching Zotero Extension, and Poppler.
 ---
 
 # Research with Zotero
 
-Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it with that quoted path in Bash commands. Do not inspect the repository or read a bundled script unless its command fails.
+This is a human-directed, Zotero-owned workflow. The researcher sets goals and policy; the Agent may execute any installed operation, while Zotero remains the sole write path and source of truth. Never invent unsupported commands, bypass Zotero with direct database/storage writes, or execute arbitrary JavaScript. Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it with that quoted path in Bash commands. Do not inspect the repository or read a bundled script unless its command fails.
 
 ## Start
 
