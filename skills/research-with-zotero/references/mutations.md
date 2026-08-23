@@ -1,6 +1,6 @@
 # Mutations
 
-Writes are limited to `resolve`, `fulltext import`, `fulltext adopt`, and `fulltext migrate`. For general additions, arbitrary metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
+Current installed writes are limited to `resolve`, `fulltext import`, `fulltext adopt`, and `fulltext migrate`. The accepted native-first additions are planned, not callable until they appear in `za-cli --help`. For unavailable additions, arbitrary metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
 
 ## Rules
 
@@ -9,7 +9,7 @@ Writes are limited to `resolve`, `fulltext import`, `fulltext adopt`, and `fullt
 - Removal means Zotero Trash. Never request permanent deletion or empty Trash.
 - A Literature Item may belong to several Collections. Removing a Collection Membership does not remove the item.
 - Reuse an existing item only on exact Item Key, normalized DOI/arXiv/PMID/ISBN, or identical source SHA-256. Similar metadata is review-only.
-- Local `add file PATH` must not create an unidentified standalone PDF. Use explicit `--lookup` for network metadata or `--parent ITEM_KEY` for a known item.
+- The planned local `add file PATH` contract must not guess an unidentified parent: its default path uses native recognition, while `--parent ITEM_KEY` explicitly bypasses recognition. Until that command is installed, do not invoke or simulate it.
 - A different incoming PDF never replaces an existing Source Document automatically.
 
 ## Metadata resolution
@@ -34,4 +34,4 @@ Use duplicate detection as a report, not an automatic merge. The caller chooses 
 
 ## Network
 
-Only explicit DOI/arXiv/URL ingest, PDF fetching, metrics, and Zotero sync may use external services. Tell the user which service was contacted. Never send Full Text.
+Only explicit metadata-only identifier/URL/import paths may use external services, and translator imports use `saveAttachments=false`. PDF discovery, download, campus authentication, and cookies belong to the Human/browser boundary, not this core. Tell the user which metadata service was contacted. Never send Full Text.

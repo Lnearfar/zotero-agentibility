@@ -32,6 +32,7 @@ Making human-directed Zotero workflows natively and safely operable by AI agents
 - Agent Skill + CLI: load Zotero instructions into LLM context only when the task needs them;
 - canonical Markdown Full Text alongside the original PDF;
 - local semantic search with exact line and page verification;
+- native metadata resolution for standalone PDF/EPUB attachments already in Zotero;
 - confirmed Markdown import and adoption through a fixed authenticated Zotero Extension.
 
 
@@ -199,6 +200,10 @@ Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-re
 
 ## 3. CLI reference
 
+The table below is the command surface installed in this release. The accepted
+native capability roadmap is documented in [`docs/capabilities.md`](docs/capabilities.md);
+planned command groups are not published commands.
+
 | Command                       | Behavior                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `app doctor [--deep]`         | Validate the local stack from cached state; optionally reconcile index statistics   |
@@ -262,6 +267,7 @@ Keep CLI syntax in Click help, multi-command research rules in the Skill, and du
 
 - [Domain language](CONTEXT.md)
 - [CLI shape](docs/cli.md)
+- [Native capability roadmap](docs/capabilities.md)
 - [Semantic indexing](docs/indexing.md)
 - [Extension bridge](docs/bridge.md)
 - [Ingest and metadata resolution](docs/ingest.md)

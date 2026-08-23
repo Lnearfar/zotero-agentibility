@@ -23,7 +23,7 @@ Start the requested Zotero operation immediately. Do not run CLI help, `app doct
 
 CLI help owns installed command names, arguments, and options. This Skill owns the multi-command workflows, source-verification rules, and safety invariants below because command help cannot express them.
 
-The installed CLI provides local semantic `search`, explicit index management, confirmed Full Text writes, and top-level `resolve` for standalone PDF/EPUB metadata. General ingest, merge, arbitrary metadata/Collection editing, and all other mutations remain unavailable.
+The installed CLI provides local semantic `search`, explicit index management, confirmed Full Text writes, and top-level `resolve` for standalone PDF/EPUB metadata. General ingest, merge, arbitrary metadata/Collection editing, and all other mutations remain unavailable. The accepted native-first expansion is tracked in repository docs, not exposed by this Skill until it appears in `za-cli --help`.
 
 ## Route
 
