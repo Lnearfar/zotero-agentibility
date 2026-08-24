@@ -371,6 +371,14 @@ def add_file_snapshot(
     if len(str(path)) > 2048:
         raise CliError("INVALID_DOCUMENT_SOURCE", "Document source path is too long")
     try:
+        with path.open("rb") as source:
+            sample = source.read(200)
+        detected_type = "application/pdf" if sample.startswith(b"%PDF-") else (
+            "application/epub+zip"
+            if sample[30:].startswith(b"mimetypeapplication/epub+zip") else None
+        )
+        if detected_type != content_type:
+            raise CliError("INVALID_DOCUMENT_SOURCE", "Document content does not match its PDF or EPUB extension")
         digest = _sha256_file(path)
     except OSError as exc:
         raise CliError("DOCUMENT_FILE_MISSING", "Document source became unreadable") from exc

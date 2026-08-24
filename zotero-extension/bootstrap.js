@@ -702,6 +702,11 @@ function _isAddFileContentType(contentType) {
   return contentType === "application/pdf" || contentType === "application/epub+zip";
 }
 
+async function _sniffDocumentContentType(file) {
+  var sample = await Zotero.File.getSample(file);
+  return String(Zotero.MIME.sniffForMIMEType(sample) || "").toLowerCase();
+}
+
 async function _validateAddFilePath(args) {
   var file;
   try {
@@ -716,15 +721,17 @@ async function _validateAddFilePath(args) {
   if (_sha256File(file.path) !== args.expected_sha256) {
     throw _operationError("STALE_SOURCE_HASH", "Document source changed after review", 409);
   }
+  var declaredContentType;
   var contentType;
   try {
-    contentType = String(await Zotero.MIME.getMIMETypeFromFile(file) || "").toLowerCase();
+    declaredContentType = String(await Zotero.MIME.getMIMETypeFromFile(file) || "").toLowerCase();
+    contentType = await _sniffDocumentContentType(file);
   }
   catch (error) {
     throw _operationError("INVALID_DOCUMENT_SOURCE", "Zotero could not detect a PDF or EPUB source", 409);
   }
-  if (!_isAddFileContentType(contentType)) {
-    throw _operationError("INVALID_DOCUMENT_SOURCE", "Add source must be a native PDF or EPUB", 409,
+  if (!_isAddFileContentType(contentType) || declaredContentType !== contentType) {
+    throw _operationError("INVALID_DOCUMENT_SOURCE", "Document magic bytes do not match a native PDF or EPUB", 409,
       false, { content_type: contentType || null });
   }
   return { file: file, contentType: contentType };
@@ -734,9 +741,11 @@ async function _validateImportedDocument(item, args, libraryID, contentType, exp
   await item.reload(["primaryData"], true);
   var file = await _attachmentFile(item);
   var attachmentSha256 = _sha256File(file.path);
+  var detectedContentType = await _sniffDocumentContentType(Zotero.File.pathToFile(file.path));
   if (item.libraryID !== libraryID
       || item.attachmentLinkMode !== Zotero.Attachments.LINK_MODE_IMPORTED_FILE
       || String(item.attachmentContentType || "").toLowerCase() !== contentType
+      || detectedContentType !== contentType
       || attachmentSha256 !== expectedAttachmentSha256
       || attachmentSha256 !== args.expected_sha256) {
     throw _operationError("IMPORTED_DOCUMENT_INVALID", "Imported document failed validation", 500,

@@ -31,6 +31,7 @@ require bootstrap.js '_findAttachmentsByHash'
 require bootstrap.js 'Zotero.Utilities.Internal.md5Async'
 require bootstrap.js '_acquireAddLock()'
 require bootstrap.js 'Zotero.MIME.getMIMETypeFromFile(file)'
+require bootstrap.js 'Zotero.MIME.sniffForMIMEType(sample)'
 require bootstrap.js 'await item.eraseTx();'
 require bootstrap.js 'IDENTICAL_ATTACHMENT_AMBIGUOUS'
 require bootstrap.js 'outcome: "added_unrecognized"'
@@ -106,6 +107,10 @@ function body(name) {
 function requireText(haystack, needle, message) {
   if (!haystack.includes(needle)) throw new Error(message || ("missing " + needle));
 }
+const sourceValidation = body("async function _validateAddFilePath");
+requireText(sourceValidation, "_sniffDocumentContentType(file)", "source validation trusts the filename MIME without magic-byte sniffing");
+const importedValidation = body("async function _validateImportedDocument");
+requireText(importedValidation, "detectedContentType !== contentType", "imported copy lacks magic-byte revalidation");
 const hashScan = body("async function _findAttachmentsByHash");
 requireText(hashScan, "attachmentHash", "MD5 prefilter was removed");
 requireText(hashScan, "_sha256File(file.path)", "candidate SHA-256 verification missing");

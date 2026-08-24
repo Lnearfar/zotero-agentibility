@@ -54,7 +54,8 @@ present for future library scope, but the current operation requires My Library:
 {"protocol":1,"operation":"add_file","arguments":{"session_id":"agent-1","library_id":1,"source_path":"/home/user/paper.pdf","expected_sha256":"<64 lowercase hex>","collection_key":null,"parent_item_key":null}}
 ```
 
-The Extension validates Zotero's native MIME result, filters exact attachment
+The Extension requires Zotero's magic-byte sniffer to agree with the PDF/EPUB
+extension-derived MIME result, filters exact attachment
 matches by live stored-file state and size, and uses Zotero's MD5 only as a
 prefilter before live stored-file SHA-256 comparison. It imports with
 `Zotero.Attachments.importFromFile` and revalidates the imported storage copy

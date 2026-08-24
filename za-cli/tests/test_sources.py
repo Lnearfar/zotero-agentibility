@@ -361,7 +361,7 @@ class PreferredSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "paper.PDF"
-            source.write_bytes(b"pdf")
+            source.write_bytes(b"%PDF-1.7\n")
             snapshot = add_file_snapshot(
                 FakeDatabase({}), source, "CALL2345", "ABCD2345"
             )
@@ -370,7 +370,23 @@ class PreferredSourceTests(unittest.TestCase):
         self.assertEqual(snapshot["collectionKey"], "CALL2345")
         self.assertEqual(snapshot["parentItemKey"], "ABCD2345")
         self.assertEqual(snapshot["contentType"], "application/pdf")
-        self.assertEqual(snapshot["expectedSha256"], hashlib.sha256(b"pdf").hexdigest())
+        self.assertEqual(snapshot["expectedSha256"], hashlib.sha256(b"%PDF-1.7\n").hexdigest())
+
+    def test_add_file_snapshot_rejects_spoofed_pdf_and_accepts_epub_magic(self):
+        from za_cli.sources import add_file_snapshot
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = root / "fake.pdf"
+            fake.write_text("not a document", encoding="utf-8")
+            with self.assertRaises(CliError) as caught:
+                add_file_snapshot(FakeDatabase({}), fake)
+            self.assertEqual(caught.exception.code, "INVALID_DOCUMENT_SOURCE")
+
+            epub = root / "book.epub"
+            epub.write_bytes(b"PK\x03\x04" + b"\0" * 26 + b"mimetypeapplication/epub+zip")
+            snapshot = add_file_snapshot(FakeDatabase({}), epub)
+            self.assertEqual(snapshot["contentType"], "application/epub+zip")
 
     def test_add_file_snapshot_rejects_non_document_and_symlink(self):
         from za_cli.sources import add_file_snapshot
@@ -383,7 +399,7 @@ class PreferredSourceTests(unittest.TestCase):
                 add_file_snapshot(FakeDatabase({}), source)
             self.assertEqual(caught.exception.code, "INVALID_DOCUMENT_SOURCE")
             pdf = root / "paper.pdf"
-            pdf.write_bytes(b"pdf")
+            pdf.write_bytes(b"%PDF-1.7\n")
             link = root / "link.pdf"
             link.symlink_to(pdf)
             with self.assertRaises(CliError) as caught:
