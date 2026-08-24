@@ -27,7 +27,9 @@ require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltex
 require bootstrap.js 'source_path'
 require bootstrap.js 'add_file'
 require bootstrap.js 'library_id'
+require bootstrap.js '_findAttachmentsByHash'
 require bootstrap.js 'Zotero.Utilities.Internal.md5Async'
+require bootstrap.js '_acquireIdentityLock(args.expected_sha256)'
 require bootstrap.js 'Zotero.MIME.getMIMETypeFromFile(file)'
 require bootstrap.js 'await item.eraseTx();'
 require bootstrap.js 'IDENTICAL_ATTACHMENT_AMBIGUOUS'
@@ -56,6 +58,9 @@ require bootstrap.js 'Zotero.Attachments.importFromFile'
 require bootstrap.js 'Zotero.DB.executeTransaction'
 require bootstrap.js 'Zotero.Items.trash'
 require bootstrap.js 'hash.SHA256'
+require bootstrap.js 'expectedAttachmentSha256'
+require bootstrap.js 'isEPUBAttachment()'
+require bootstrap.js 'application/epub+zip'
 require bootstrap.js 'audit.jsonl'
 if grep -Eq 'Zotero\.DB\.(queryAsync|executeSQL)|OS\.File\.(copy|move|write)|IOUtils\.write' bootstrap.js; then
   printf 'bootstrap.js contains prohibited direct database or storage writes\n' >&2
@@ -71,6 +76,58 @@ if sed -n '/var identifiers = candidate ?/,/var matches =/p' bootstrap.js | grep
 fi
 if sed -n '/async function _addFile(args)/,/async function _executeAddFile/p' bootstrap.js | grep -Eq '^[[:space:]]*contentType[[:space:]]*:'; then
   printf 'add_file import must let Zotero detect native MIME type\n' >&2
+  exit 1
+fi
+if ! sed -n '/async function _executeAddFile(args)/,/function _prepareAuditFile/p' bootstrap.js \
+    | grep -Fq 'await _acquireIdentityLock(args.expected_sha256);'; then
+  printf 'add_file must guard the exact incoming SHA-256 before preflight and import\n' >&2
+  exit 1
+fi
+node <<'NODE'
+const fs = require("fs");
+const text = fs.readFileSync("bootstrap.js", "utf8");
+function body(name) {
+  const start = text.indexOf(name);
+  if (start < 0) throw new Error("missing " + name);
+  let open = text.indexOf("{", start), depth = 0, quote = null, line = false, block = false;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i], n = text[i + 1];
+    if (line) { if (c === "\n") line = false; continue; }
+    if (block) { if (c === "*" && n === "/") { block = false; i++; } continue; }
+    if (quote) { if (c === "\\") i++; else if (c === quote) quote = null; continue; }
+    if (c === "/" && n === "/") { line = true; i++; continue; }
+    if (c === "/" && n === "*") { block = true; i++; continue; }
+    if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
+    if (c === "{") depth++;
+    if (c === "}" && --depth === 0) return text.slice(open, i + 1);
+  }
+  throw new Error("unbalanced " + name);
+}
+function requireText(haystack, needle, message) {
+  if (!haystack.includes(needle)) throw new Error(message || ("missing " + needle));
+}
+const hashScan = body("async function _findAttachmentsByHash");
+requireText(hashScan, "attachmentHash", "MD5 prefilter was removed");
+requireText(hashScan, "_sha256File(file.path)", "candidate SHA-256 verification missing");
+requireText(body("async function _reuseAddedAttachment"), "_sha256File(existingFile.path)", "exact reuse lacks final SHA-256 revalidation");
+requireText(body("async function _reuseStrongSource"), "_sha256File(sourceFile.path)", "Strong-ID reuse lacks final SHA-256 revalidation");
+const add = body("async function _addFile(args)");
+requireText(add, "RecognizeDocument._recognize", "add flow lost native recognition");
+requireText(add, "_duplicateWarnings", "add flow lost duplicate warning scan");
+if (add.includes("_acquireWriteLock")) throw new Error("add flow holds the global lock across scans/recognition");
+const execute = body("async function _executeAddFile");
+if (execute.includes("await _acquireWriteLock")) throw new Error("executeAddFile holds global lock across add flow");
+if (/isEPUBAttachment\(\)[\s\S]{0,160}addTag\(SOURCE_TAG/.test(text)) throw new Error("EPUB receives PDF-only Source Document tag");
+console.log("Static identity/lock contract passed");
+NODE
+if ! sed -n '/async function _attachAddedToParent(/,/async function _reuseAddedAttachment/p' bootstrap.js \
+    | grep -Fq 'if (imported.isPDFAttachment()) imported.addTag(SOURCE_TAG, 0);'; then
+  printf 'parent PDF imports must receive the Source Document marker\n' >&2
+  exit 1
+fi
+if sed -n '/async function _attachAddedToParent(/,/async function _reuseAddedAttachment/p' bootstrap.js \
+    | grep -Fq 'imported.isEPUBAttachment()'; then
+  printf 'parent EPUB imports must not receive the PDF-only Source Document marker\n' >&2
   exit 1
 fi
 if grep -Eq '(^|[^[:alnum:]_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\(' bootstrap.js; then

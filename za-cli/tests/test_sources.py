@@ -132,6 +132,37 @@ class PreferredSourceTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, "AMBIGUOUS_SOURCE")
 
+    def test_unique_unmarked_epub_is_reported_as_source(self):
+        selected = preferred_source(
+            [attachment("EPUBONE", "storage:book.epub", content_type="application/epub+zip")],
+            Path("/tmp/zotero"),
+        )
+        self.assertEqual(selected["kind"], "epub")
+        self.assertEqual(selected["attachmentKey"], "EPUBONE")
+        self.assertEqual(selected["path"], "/tmp/zotero/storage/EPUBONE/book.epub")
+
+    def test_marked_pdf_wins_over_unmarked_epub(self):
+        selected = preferred_source(
+            [
+                attachment("PDFONE", "storage:one.pdf", tags=(SOURCE_TAG,)),
+                attachment("EPUBONE", "storage:book.epub", content_type="application/epub+zip"),
+            ],
+            Path("/tmp/zotero"),
+        )
+        self.assertEqual(selected["kind"], "pdf")
+        self.assertEqual(selected["attachmentKey"], "PDFONE")
+
+    def test_pdf_and_epub_without_marker_are_ambiguous(self):
+        with self.assertRaises(CliError) as caught:
+            preferred_source(
+                [
+                    attachment("PDFONE", "storage:one.pdf"),
+                    attachment("EPUBONE", "storage:book.epub", content_type="application/epub+zip"),
+                ],
+                Path("/tmp/zotero"),
+            )
+        self.assertEqual(caught.exception.code, "AMBIGUOUS_SOURCE")
+
     def test_fulltext_audit_classifies_only_deterministic_candidates(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -230,6 +261,18 @@ class PreferredSourceTests(unittest.TestCase):
             db.lookup = lambda key: {"title": "A Very Long Paper Title About Reliable Data Driven Control Methods and Applications"}
             manifest = fulltext_manifest(db, root)
         self.assertEqual(manifest["entries"][0]["candidateClass"], "candidate")
+
+    def test_epub_read_is_explicitly_unsupported(self):
+        from za_cli.sources import read_source
+
+        with self.assertRaises(CliError) as caught:
+            read_source({"kind": "epub", "path": "/tmp/book.epub", "exists": True}, start=1, limit=10, all_text=False)
+        self.assertEqual(caught.exception.code, "UNSUPPORTED_SOURCE_FORMAT")
+
+    def test_epub_find_is_explicitly_unsupported(self):
+        with self.assertRaises(CliError) as caught:
+            lexical_find({"kind": "epub", "path": "/tmp/book.epub", "exists": True}, "query", limit=10)
+        self.assertEqual(caught.exception.code, "UNSUPPORTED_SOURCE_FORMAT")
 
     def test_lexical_find_returns_requested_context(self):
         with tempfile.TemporaryDirectory() as tmp:

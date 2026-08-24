@@ -85,8 +85,13 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
             )
         kind = "markdown"
     else:
-        pdfs = [
+        documents = [
             a for a in attachments
+            if str(a.get("contentType") or "").lower() in {"application/pdf", "application/epub+zip"}
+            or str(a.get("attachmentPath") or "").lower().endswith((".pdf", ".epub"))
+        ]
+        pdfs = [
+            a for a in documents
             if str(a.get("contentType") or "").lower() == "application/pdf"
             or str(a.get("attachmentPath") or "").lower().endswith(".pdf")
         ]
@@ -99,22 +104,27 @@ def preferred_source(attachments: list[dict], data_dir: Path) -> dict:
             )
         if tagged:
             selected = tagged[0]
-        elif len(pdfs) == 1:
-            selected = pdfs[0]
-        elif len(pdfs) > 1:
+        elif len(documents) == 1:
+            selected = documents[0]
+        elif len(documents) > 1:
             raise CliError(
                 "AMBIGUOUS_SOURCE",
-                "Multiple PDFs require one attachment tagged za-cli:pdf",
-                details={"keys": [a["key"] for a in pdfs]},
+                "Multiple PDF or EPUB documents require one PDF tagged za-cli:pdf",
+                details={"keys": [a["key"] for a in documents]},
             )
         else:
-            raise CliError("SOURCE_NOT_FOUND", "No Markdown Full Text or Source Document PDF was found")
-        kind = "pdf"
+            raise CliError("SOURCE_NOT_FOUND", "No Markdown Full Text or Source Document PDF or EPUB was found")
+        kind = "epub" if (
+            str(selected.get("contentType") or "").lower() == "application/epub+zip"
+            or str(selected.get("attachmentPath") or "").lower().endswith(".epub")
+        ) else "pdf"
     path = resolve_attachment_path(selected, data_dir)
     return {
         "kind": kind,
         "attachmentKey": selected["key"],
-        "title": selected.get("title") or ("Markdown Full Text" if kind == "markdown" else "PDF"),
+        "title": selected.get("title") or ("Markdown Full Text" if kind == "markdown" else kind.upper()),
+        "contentType": selected.get("contentType"),
+        "filename": path.name if path else Path(str(selected.get("attachmentPath") or "")).name,
         "path": str(path) if path else None,
         "exists": bool(path and path.is_file() and not path.is_symlink()),
     }
@@ -160,6 +170,8 @@ def segment_markdown(text: str, *, start: int, limit: int, all_text: bool) -> di
 
 
 def read_source(source: dict, *, start: int, limit: int, all_text: bool) -> dict:
+    if source["kind"] == "epub":
+        raise CliError("UNSUPPORTED_SOURCE_FORMAT", "EPUB sources are not readable; convert to Markdown first")
     path = _require_file(source)
     if source["kind"] == "markdown":
         segment = segment_markdown(path.read_text(encoding="utf-8", errors="replace"), start=start, limit=limit, all_text=all_text)
@@ -169,6 +181,8 @@ def read_source(source: dict, *, start: int, limit: int, all_text: bool) -> dict
 
 
 def lexical_find(source: dict, query: str, *, limit: int, context: int = 0) -> dict:
+    if source["kind"] == "epub":
+        raise CliError("UNSUPPORTED_SOURCE_FORMAT", "EPUB sources are not searchable; convert to Markdown first")
     query = query.strip()
     if not query:
         raise CliError("EMPTY_QUERY", "Find query must not be empty")
