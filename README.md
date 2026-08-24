@@ -311,6 +311,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.5.1
+
+- Require PDF/EPUB magic-byte validation in both CLI review and Extension commit checks instead of trusting a filename-derived MIME fallback.
+
 ### v0.5.0
 
 - Added confirmed local PDF/EPUB intake through Zotero-native import and recognition.
