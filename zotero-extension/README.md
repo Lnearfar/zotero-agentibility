@@ -8,7 +8,7 @@ Authenticated fixed-operation bridge for Zotero-Agentibility. Installation is ma
 make
 ```
 
-This reads the version from `manifest.json`, validates the source, creates `build/zotero-agentibility-<version>.xpi`, and regenerates the hashed `updates.json`. Install version 0.4.1 through Zotero's Add-ons UI once; later releases can update automatically through GitHub Releases.
+This reads the version from `manifest.json`, validates the source, creates `build/zotero-agentibility-<version>.xpi`, and regenerates the hashed `updates.json`. Install the current XPI through Zotero's Add-ons UI once; later releases can update automatically through GitHub Releases.
 
 ## Development install or upgrade
 
@@ -37,7 +37,7 @@ mv -f -- "$tmp" "$dst"
 trap - EXIT
 ```
 
-The destination filename must exactly match the manifest ID `zotero-agentibility@local`. Do not edit `extensions.json`; Zotero discovers or upgrades the XPI on its next start. The earlier failed profile-placement attempt used a Zotero-9-incompatible manifest—the placement mechanism was not the fault. This profile replacement remains a development shortcut; normal releases use the manifest's GitHub `update_url` after the initial manual 0.4.1 installation.
+The destination filename must exactly match the manifest ID `zotero-agentibility@local`. Do not edit `extensions.json`; Zotero discovers or upgrades the XPI on its next start. The earlier failed profile-placement attempt used a Zotero-9-incompatible manifest—the placement mechanism was not the fault. This profile replacement remains a development shortcut; normal releases use the manifest's GitHub `update_url` after the initial manual installation.
 
 On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health` plus fixed `add_file`, `metadata_resolve`, `fulltext_adopt`, and `fulltext_import` operations; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`. Local-document reuse is authorized by a live stored-file SHA-256 (the Zotero attachment MD5 is only a prefilter). Add/recognition scans run outside the short mutation lock; EPUB attachments remain native sources but are not tagged `za-cli:pdf` (that marker is PDF-only).
 
