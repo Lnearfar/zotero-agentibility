@@ -10,34 +10,26 @@ make
 
 This reads the version from `manifest.json`, validates the source, creates `build/zotero-agentibility-<version>.xpi`, and regenerates the hashed `updates.json`. Install the current XPI through Zotero's Add-ons UI once; later releases can update automatically through GitHub Releases.
 
-## Development install or upgrade
+## Installation and release updates
 
-Zotero 9–10 scan `<profile>/extensions/<add-on-id>.xpi` on startup, so development builds can be installed without UI automation. **Close Zotero first**, set the exact active profile explicitly, validate the archive, and replace it atomically on the same filesystem:
+Zotero 7–10 has no supported non-interactive add-on-management CLI. Install the XPI once through **Tools → Plugins → Install Plugin From File**. After that, publish every upgrade as a strictly newer version and let Zotero's AddonManager follow the manifest `update_url`; do not automate the desktop or edit `extensions.json`.
 
-Run from the repository root after selecting the active profile listed in `~/.zotero/zotero/profiles.ini`:
+From a clean, validated release commit:
 
 ```bash
-profile="${ZOTERO_PROFILE:?Set ZOTERO_PROFILE to the active Zotero profile directory}"
-version=$(python3 -c 'import json; print(json.load(open("zotero-extension/manifest.json"))["version"])')
-src="$PWD/zotero-extension/build/zotero-agentibility-$version.xpi"
-dst="$profile/extensions/zotero-agentibility@local.xpi"
-
-if pgrep -x zotero >/dev/null || pgrep -x zotero-bin >/dev/null; then
-  echo "Close Zotero before replacing its XPI" >&2
-  exit 1
-fi
-
-test -d "$profile" || { echo "Zotero profile not found: $profile" >&2; exit 1; }
-unzip -t "$src" >/dev/null
-mkdir -p "$profile/extensions"
-tmp=$(mktemp "$profile/extensions/.zotero-agentibility.XXXXXX")
-trap 'rm -f "$tmp"' EXIT
-cp -- "$src" "$tmp"
-mv -f -- "$tmp" "$dst"
-trap - EXIT
+version=$(jq -r .version zotero-extension/manifest.json)
+make -C zotero-extension clean all
+git tag "v$version"
+git push origin main "v$version"
+gh release create "v$version" \
+  "zotero-extension/build/zotero-agentibility-$version.xpi" \
+  zotero-extension/updates.json \
+  --title "v$version" --generate-notes
 ```
 
-The destination filename must exactly match the manifest ID `zotero-agentibility@local`. Do not edit `extensions.json`; Zotero discovers or upgrades the XPI on its next start. The earlier failed profile-placement attempt used a Zotero-9-incompatible manifest—the placement mechanism was not the fault. This profile replacement remains a development shortcut; normal releases use the manifest's GitHub `update_url` after the initial manual installation.
+`updates.json` must name the same version, compatible Zotero range, versioned GitHub asset, and built XPI SHA-256. Zotero checks it through AddonManager. The agent verifies the installed version afterward with `za-cli --json app doctor`; it never takes screenshots or controls the Plugins UI. If an immediate update check is needed before Zotero's scheduled check, the Human may request it in the Plugins UI.
+
+A stopped-profile XPI replacement is only an unsupported development fallback. It can leave stale AddonManager compatibility state—especially after an `appDisabled` result—even when the archive changed. Never use it as the release update path, never overwrite a running profile, and never edit generated add-on registry/cache files. The evidence and rejected pseudo-CLI flags are recorded in [`../docs/research/zotero-addon-cli-management.md`](../docs/research/zotero-addon-cli-management.md).
 
 On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health` plus fixed `add_file`, `metadata_resolve`, `fulltext_adopt`, and `fulltext_import` operations; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`. Local-document reuse is authorized by a live stored-file SHA-256 (the Zotero attachment MD5 is only a prefilter). Add/recognition scans run outside the short mutation lock; EPUB attachments remain native sources but are not tagged `za-cli:pdf` (that marker is PDF-only).
 

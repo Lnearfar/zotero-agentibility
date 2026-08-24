@@ -152,9 +152,9 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:md` and `za-cli:pdf`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`. `za-cli:md` marks canonical Markdown Full Text; `za-cli:pdf` marks the selected Source Document PDF when disambiguation is needed.
 
 <details>
-<summary><b>Development XPI upgrades</b></summary>
+<summary><b>Extension updates after the first install</b></summary>
 
-A development build can be installed without UI automation by closing Zotero and atomically replacing `<profile>/extensions/zotero-agentibility@local.xpi`. Follow the guarded procedure in [`zotero-extension/README.md`](zotero-extension/README.md#development-install-or-upgrade); do not edit Zotero's generated `extensions.json`.
+Zotero has no supported add-on-management CLI. Install the XPI manually once; later releases increment the version and publish the XPI plus hashed `updates.json`, allowing Zotero's AddonManager to update it without agent-driven screenshots or desktop automation. See [`zotero-extension/README.md`](zotero-extension/README.md#installation-and-release-updates) and the [CLI-management research](docs/research/zotero-addon-cli-management.md). Never edit Zotero's generated `extensions.json`.
 
 </details>
 
