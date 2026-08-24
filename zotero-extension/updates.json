@@ -5,7 +5,7 @@
         {
           "version": "0.4.1",
           "update_link": "https://github.com/Lnearfar/zotero-agentibility/releases/download/v0.4.1/zotero-agentibility-0.4.1.xpi",
-          "update_hash": "sha256:632898487c09d87d86ffe5506e421c1e07b74bbedd04803536c63b64d53ad8b4",
+          "update_hash": "sha256:abc351790f3e01174c13950a470c5f52562c89d58390c0e02d41a123a44c2b24",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",

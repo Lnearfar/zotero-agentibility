@@ -29,7 +29,7 @@ require bootstrap.js 'add_file'
 require bootstrap.js 'library_id'
 require bootstrap.js '_findAttachmentsByHash'
 require bootstrap.js 'Zotero.Utilities.Internal.md5Async'
-require bootstrap.js '_acquireIdentityLock(args.expected_sha256)'
+require bootstrap.js '_acquireAddLock()'
 require bootstrap.js 'Zotero.MIME.getMIMETypeFromFile(file)'
 require bootstrap.js 'await item.eraseTx();'
 require bootstrap.js 'IDENTICAL_ATTACHMENT_AMBIGUOUS'
@@ -79,8 +79,8 @@ if sed -n '/async function _addFile(args)/,/async function _executeAddFile/p' bo
   exit 1
 fi
 if ! sed -n '/async function _executeAddFile(args)/,/function _prepareAuditFile/p' bootstrap.js \
-    | grep -Fq 'await _acquireIdentityLock(args.expected_sha256);'; then
-  printf 'add_file must guard the exact incoming SHA-256 before preflight and import\n' >&2
+    | grep -Fq 'await _acquireAddLock();'; then
+  printf 'add_file must serialize intake flows before preflight and recognition\n' >&2
   exit 1
 fi
 node <<'NODE'
@@ -114,9 +114,13 @@ requireText(body("async function _reuseStrongSource"), "_sha256File(sourceFile.p
 const add = body("async function _addFile(args)");
 requireText(add, "RecognizeDocument._recognize", "add flow lost native recognition");
 requireText(add, "_duplicateWarnings", "add flow lost duplicate warning scan");
+requireText(add, "imported = await Zotero.Attachments.importFromFile", "imported item is not retained before validation/rollback");
+requireText(add, "await _validateImportedDocument", "imported item validation missing");
 if (add.includes("_acquireWriteLock")) throw new Error("add flow holds the global lock across scans/recognition");
 const execute = body("async function _executeAddFile");
+requireText(execute, "await _acquireAddLock()", "all add flows must be serialized for Strong-Identifier safety");
 if (execute.includes("await _acquireWriteLock")) throw new Error("executeAddFile holds global lock across add flow");
+if (text.includes("identityLocks")) throw new Error("per-hash guard cannot serialize different files with one Strong Identifier");
 if (/isEPUBAttachment\(\)[\s\S]{0,160}addTag\(SOURCE_TAG/.test(text)) throw new Error("EPUB receives PDF-only Source Document tag");
 console.log("Static identity/lock contract passed");
 NODE

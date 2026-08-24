@@ -17,8 +17,8 @@ var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_im
 var bearerToken = null;
 var writeLocked = false;
 var writeWaiters = [];
-var identityLocks = Object.create(null);
-var identityLockCount = 0;
+var addLocked = false;
+var addWaiters = [];
 var bridgeEndpoint = null;
 var originalBodyData = null;
 var originalHandleRequest = null;
@@ -235,41 +235,33 @@ async function _withWriteLock(operation) {
   }
 }
 
-function _acquireIdentityLock(hash) {
-  var state = identityLocks[hash];
-  if (!state) {
-    if (identityLockCount >= 16) {
-      return Promise.reject(_operationError("WRITE_BUSY", "Document identity guard table is full", 409, true));
-    }
-    identityLocks[hash] = { waiters: [] };
-    identityLockCount++;
+function _acquireAddLock() {
+  if (!addLocked) {
+    addLocked = true;
     return Promise.resolve();
   }
-  if (state.waiters.length >= 8) {
-    return Promise.reject(_operationError("WRITE_BUSY", "Identical document is already being added", 409, true));
+  if (addWaiters.length >= 8) {
+    return Promise.reject(_operationError("WRITE_BUSY", "Document add queue is full", 409, true));
   }
   return new Promise(function (resolve, reject) {
     var waiter = { resolve: resolve, timer: null };
     waiter.timer = setTimeout(function () {
-      var index = state.waiters.indexOf(waiter);
-      if (index !== -1) state.waiters.splice(index, 1);
-      reject(_operationError("WRITE_BUSY", "Timed out waiting for the identical document guard", 409, true));
+      var index = addWaiters.indexOf(waiter);
+      if (index !== -1) addWaiters.splice(index, 1);
+      reject(_operationError("WRITE_BUSY", "Timed out waiting for document intake", 409, true));
     }, 5000);
-    state.waiters.push(waiter);
+    addWaiters.push(waiter);
   });
 }
 
-function _releaseIdentityLock(hash) {
-  var state = identityLocks[hash];
-  if (!state) return;
-  var waiter = state.waiters.shift();
+function _releaseAddLock() {
+  var waiter = addWaiters.shift();
   if (waiter) {
     clearTimeout(waiter.timer);
     waiter.resolve();
     return;
   }
-  delete identityLocks[hash];
-  identityLockCount--;
+  addLocked = false;
 }
 
 function _hasTag(item, name) {
@@ -829,6 +821,13 @@ async function _attachAddedToParent(
 
 async function _reuseAddedAttachment(existing, requestedParent, collection, args) {
   await existing.reload(["primaryData", "collections"], true);
+  if (existing.deleted || existing.libraryID !== args.library_id || !existing.isAttachment()
+      || !existing.isEditable()
+      || existing.attachmentLinkMode !== Zotero.Attachments.LINK_MODE_IMPORTED_FILE
+      || (!existing.isPDFAttachment() && !existing.isEPUBAttachment())) {
+    throw _operationError("ATTACHMENT_IDENTITY_CONFLICT", "Stored attachment changed before exact reuse", 409,
+      false, { attachment_key: existing.key });
+  }
   var existingFile = await _attachmentFile(existing);
   if (_sha256File(existingFile.path) !== args.expected_sha256) {
     throw _operationError("ATTACHMENT_IDENTITY_CONFLICT", "Stored attachment failed SHA-256 identity revalidation", 409,
@@ -837,6 +836,16 @@ async function _reuseAddedAttachment(existing, requestedParent, collection, args
   var existingParent = null;
   if (existing.parentItemID) {
     existingParent = await Zotero.Items.getAsync(existing.parentItemID);
+    if (!existingParent) {
+      throw _operationError("ATTACHMENT_IDENTITY_CONFLICT", "Stored attachment parent is missing", 409,
+        false, { attachment_key: existing.key });
+    }
+    await existingParent.reload(["primaryData"], true);
+    if (existingParent.deleted || existingParent.libraryID !== args.library_id
+        || !existingParent.isRegularItem() || !existingParent.isEditable()) {
+      throw _operationError("ATTACHMENT_IDENTITY_CONFLICT", "Stored attachment parent changed before exact reuse", 409,
+        false, { attachment_key: existing.key, parent_item_key: existingParent.key });
+    }
   }
   if (requestedParent) {
     await requestedParent.reload(["primaryData"], true);
@@ -908,7 +917,8 @@ async function _addFile(args) {
       { attachment_keys: existingMatches.map(function (item) { return item.key; }) });
   }
   if (existingMatches.length === 1) {
-    return _withWriteLock(function () {
+    return _withWriteLock(async function () {
+      await _validateAddFilePath(args);
       return _reuseAddedAttachment(existingMatches[0], context.parent, context.collection, args);
     });
   }
@@ -918,12 +928,16 @@ async function _addFile(args) {
   var committed = false;
   var erasedIncomingKey = null;
   try {
-    var importOptions = {
-      file: args.source_path,
-      libraryID: context.libraryID,
-      saveOptions: { skipSelect: true }
-    };
-    imported = await _withWriteLock(async function () {
+    await _withWriteLock(async function () {
+      var liveSourceReview = await _validateAddFilePath(args);
+      if (liveSourceReview.contentType !== sourceReview.contentType) {
+        throw _operationError("STALE_SOURCE_PATH", "Document source type changed after review", 409);
+      }
+      var importOptions = {
+        file: liveSourceReview.file.path,
+        libraryID: context.libraryID,
+        saveOptions: { skipSelect: true }
+      };
       if (!context.parent && context.collection) {
         var liveCollection = Zotero.Collections.getByLibraryAndKey(context.libraryID, context.collection.key);
         if (!liveCollection || liveCollection.deleted || liveCollection.libraryID !== context.libraryID) {
@@ -931,11 +945,10 @@ async function _addFile(args) {
         }
         importOptions.collections = [liveCollection.id];
       }
-      var item = await Zotero.Attachments.importFromFile(importOptions);
+      imported = await Zotero.Attachments.importFromFile(importOptions);
       await _validateImportedDocument(
-        item, args, context.libraryID, sourceReview.contentType, sourceSha256
+        imported, args, context.libraryID, sourceReview.contentType, sourceSha256
       );
-      return item;
     });
     var importedFile = await _attachmentFile(imported);
 
@@ -1016,14 +1029,14 @@ async function _addFile(args) {
         var erasedKey = imported.key;
         var sourceReuse = await _withWriteLock(async function () {
           await _discardMetadataCandidate(candidate);
+          candidate = null;
           await _eraseAddedItem(imported);
+          imported = null;
+          erasedIncomingKey = erasedKey;
           return _reuseStrongSource(
             source, matched, context.collection, args, matches[0].identifier, sourceSha256
           );
         });
-        erasedIncomingKey = erasedKey;
-        candidate = null;
-        imported = null;
         committed = true;
         return sourceReuse;
       }
@@ -1116,10 +1129,10 @@ async function _addFile(args) {
 
 async function _executeAddFile(args) {
   var auditFile = _prepareAuditFile();
-  var identityLocked = false;
+  var addFlowLocked = false;
   try {
-    await _acquireIdentityLock(args.expected_sha256);
-    identityLocked = true;
+    await _acquireAddLock();
+    addFlowLocked = true;
     var result;
     try {
       result = await _addFile(args);
@@ -1159,7 +1172,7 @@ async function _executeAddFile(args) {
     return result;
   }
   finally {
-    if (identityLocked) _releaseIdentityLock(args.expected_sha256);
+    if (addFlowLocked) _releaseAddLock();
   }
 }
 
