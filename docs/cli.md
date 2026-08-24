@@ -18,6 +18,8 @@ za-cli
 ├── session
 │   ├── create
 │   └── status
+├── add
+│   └── file PATH [--collection KEY] [--parent KEY] --confirm
 ├── pwd
 ├── cd
 ├── ls
@@ -48,16 +50,17 @@ bibliographic web search. `resolve` operates on a PDF or EPUB that already
 exists in Zotero: it runs Zotero's native recognizer first and uses the
 reviewed Strong Identifier Markdown fallback only when needed.
 
-`fulltext` and `index` are installed groups, not planned placeholders.
-`fulltext audit/adopt/import/migrate` handles reviewed Markdown Full Text;
-`index` maintains the local Passage index. `session` and `app` are also
-installed groups. Their exact arguments and output envelopes belong to Click
-help and remain subject to the current implementation.
+`add file` is the installed local PDF/EPUB intake command; it copies through
+Zotero, recognizes by default, and never downloads a document. `source` reports
+a sole EPUB fallback, but `read` and `find` support only Markdown/PDF and return
+`UNSUPPORTED_SOURCE_FORMAT` for EPUB. `fulltext` and
+`index` are installed groups, not planned placeholders. `session` and `app` are
+also installed. Exact arguments and output envelopes belong to Click help.
 
 ## Planned resource-group tree
 
-The following groups are the accepted target shape. Except for the four groups
-already shown above, none of these groups is installed in the current release:
+The following tree shows the accepted target shape and marks the group that is
+partially installed:
 
 ```text
 za-cli
@@ -68,7 +71,7 @@ za-cli
 ├── note list/get/create/update/trash/restore
 ├── duplicate list/review/merge
 ├── saved-search list/get/create/update/trash/restore
-├── add file/identifier/url
+├── add file [installed]; identifier/url [planned]
 ├── import ris/bibtex/csl-json
 ├── export ris/bibtex/csl-json
 ├── sync status/run
@@ -85,10 +88,9 @@ remain separate. Notes use Zotero HTML rather than a custom Markdown converter.
 the first implementation, so a caller updates chosen fields before merging.
 Metadata import and identifier/URL ingest set `saveAttachments=false`.
 
-The planned `add file` contract is specified in
-[ingest.md](ingest.md), not inferred from this tree. Planned command details
-must be added to Click help when implemented and must receive the milestone and
-risk checks in [capabilities.md](capabilities.md).
+The installed `add file` contract is specified in [ingest.md](ingest.md).
+Planned command details must be added to Click help when implemented and must
+receive the milestone and risk checks in [capabilities.md](capabilities.md).
 
 There is no `execute`, `js`, `eval`, or equivalent generic command in either
 tree. Arbitrary JavaScript and direct SQLite/storage writes are prohibited
@@ -105,9 +107,10 @@ Collection paths remain the human navigation interface. Sessions store stable
 Collection Keys and recompute display paths; an ambiguous path fails with
 candidate keys, and `cd --collection KEY` resolves it explicitly. A trashed
 current Collection resets the session to its Library root with a warning.
-Every planned write addresses Items and Collections by explicit stable key and
-never inherits session cwd. For `add file`, omitting `--collection KEY` means
-Unfiled; it is not an implicit current-Collection write.
+Every write addresses Items and Collections by explicit stable key and never
+inherits session cwd. For `add file`, omitting `--collection KEY` means Unfiled;
+it is not an implicit current-Collection write. Installed writes require an
+explicit Session ID for their content-free audit record.
 
 Multiple sessions may read concurrently. Every Zotero write requires
 `--confirm`, uses one bounded global write lock, reloads live state, and appends

@@ -32,7 +32,7 @@ Making human-directed Zotero workflows natively and safely operable by AI agents
 - Agent Skill + CLI: load Zotero instructions into LLM context only when the task needs them;
 - canonical Markdown Full Text alongside the original PDF;
 - local semantic search with exact line and page verification;
-- native metadata resolution for standalone PDF/EPUB attachments already in Zotero;
+- native local PDF/EPUB intake and metadata resolution;
 - confirmed Markdown import and adoption through a fixed authenticated Zotero Extension.
 
 
@@ -147,7 +147,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 | `~/.config/zotero-agentibility/`                                     | Mode-`0600` bridge token, sessions, and write audit               |
 | `~/.local/share/zotero-agentibility/index/<profile>/`                | Profile-specific Chroma Passage index and durable refresh queue   |
 | `~/.config/systemd/user/zotero-agentibility-index-*`                 | User-level worker and reconciliation timer                        |
-| Zotero attachment storage                                           | Canonical `fulltext.md` only after an explicit confirmed import or adoption |
+| Zotero attachment storage                                           | Confirmed local PDF/EPUB copies and canonical `fulltext.md` imports         |
 
 Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:md` and `za-cli:pdf`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`. `za-cli:md` marks canonical Markdown Full Text; `za-cli:pdf` marks the selected Source Document PDF when disambiguation is needed.
 
@@ -165,7 +165,8 @@ A development build can be installed without UI automation by closing Zotero and
 1. Search a Zotero Collection semantically, then verify the exact supporting Markdown lines or PDF pages.
 2. Read formula-heavy papers from reviewed Markdown rather than lossy PDF text extraction.
 3. Let multiple agents browse different Collections through independent Sessions.
-4. Import a reviewed local Markdown file or adopt an existing Markdown attachment as canonical `fulltext.md` after explicit confirmation.
+4. Copy a user-selected local PDF/EPUB into Zotero, recognize it natively, and reuse exact existing records without downloading anything.
+5. Import a reviewed local Markdown file or adopt an existing Markdown attachment as canonical `fulltext.md` after explicit confirmation.
 
 
 ---
@@ -196,6 +197,14 @@ A development build can be installed without UI automation by closing Zotero and
    za-cli --session "$session" --json pwd
    ```
 
+3. Add a local document only after the Human or an external browser workflow has selected it:
+
+   ```bash
+   za-cli --session "$session" --json add file /path/to/paper.pdf --confirm
+   ```
+
+   Add `--collection COLLECTION_KEY` for explicit membership or `--parent ITEM_KEY` to attach without recognition. The project does not discover or download PDFs.
+
 Use `za-cli --help` and subcommand help as your go-to syntax reference. Human-readable output is the default; agents and scripts should pass `--json`.
 
 ## 3. CLI reference
@@ -208,6 +217,7 @@ planned command groups are not published commands.
 | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `app doctor [--deep]`         | Validate the local stack from cached state; optionally reconcile index statistics   |
 | `session create/status`       | Manage independent per-agent navigation state                                        |
+| `add file`                    | Copy a local PDF/EPUB into Zotero, reuse exact matches, and recognize by default      |
 | `pwd`, `cd`, `ls`             | Navigate Collection paths without using Zotero UI selection                          |
 | `lookup`, `source`            | Inspect Literature Item metadata and preferred attachment                            |
 | `read`, `find`                | Read bounded source lines or locate exact text; `read --all` emits complete raw text |
@@ -231,7 +241,7 @@ Semantic writes use a cross-process update lock and bounded Chroma batches. A us
 <details>
 <summary><b>Current boundaries</b></summary>
 
-General ingest, metadata editing, Collection mutation, duplicate merging, OCR, DOCX citation automation, and permanent deletion are not yet implemented. Converted images aren't bundled; for figures, go back to the PDF. The catalog and Full Text bridge work with My Library only; group libraries aren't supported yet.
+Identifier/URL ingest, metadata editing, Collection mutation, duplicate merge commands, OCR, DOCX citation automation, and permanent deletion are not yet implemented. Converted images aren't bundled; for figures, go back to the PDF. The catalog and Full Text bridge work with My Library only; group libraries aren't supported yet.
 
 The index is profile-specific and retrieval uses its current snapshot immediately. CLI Full Text changes enter the durable queue; the worker discovers parent and attachment metadata changes through a cheap SQLite watermark. The reconciliation timer catches deletions, linked-file edits, and missed events. Failed extraction is reported as partial coverage rather than silently omitted.
 
@@ -242,6 +252,10 @@ The index is profile-specific and retrieval uses its current snapshot immediatel
 ### Does Markdown replace the PDF?
 
 No. The PDF remains the Source Document and the place to verify page layout and figures. Canonical Markdown provides clean local Passage search and exact line addressing.
+
+### Does this project download PDFs?
+
+No. A Human or browser Skill decides whether and how to obtain a PDF. This project only accepts a selected local PDF/EPUB or an attachment already owned by Zotero.
 
 ### Does this project convert PDFs to Markdown?
 
@@ -296,6 +310,12 @@ rm -rf ~/.config/zotero-agentibility ~/.local/share/zotero-agentibility
 Removing project state does not remove Literature Items, PDFs, Markdown attachments, or Zotero's database.
 
 ## Development History
+
+### v0.5.0
+
+- Added confirmed local PDF/EPUB intake through Zotero-native import and recognition.
+- Added SHA-256-authorized exact reuse, Strong Identifier conflict handling, and native duplicate warnings without automatic merge.
+- Added Zotero 10 compatibility and kept expensive recognition and duplicate scans outside the short mutation lock.
 
 ### v0.4.1
 

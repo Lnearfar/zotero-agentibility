@@ -1,6 +1,6 @@
 # za-cli
 
-Linux CLI for local Zotero navigation, metadata resolution, grounded reading, semantic Passage search, and confirmed Markdown Full Text import and adoption. Installation is documented in the repository root README.
+Linux CLI for local Zotero navigation, local PDF/EPUB intake, metadata resolution, grounded reading, semantic Passage search, and confirmed Markdown Full Text import and adoption. Installation is documented in the repository root README.
 
 ## Development
 
@@ -22,12 +22,13 @@ The current release provides:
 ```text
 session create/status
 app status/doctor
+add file
 pwd  cd  ls
 lookup  source  read  find  search  resolve
 index update/reconcile/status/refresh/worker/inspect
 fulltext audit/adopt/import/migrate
 ```
 
-Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Metadata and Full Text writes require `--confirm` and a protocol-compatible authenticated Extension. `resolve ATTACHMENT_KEY --markdown PATH --confirm` uses Zotero's native PDF/EPUB recognizer first and an unambiguous Strong Identifier Markdown fallback second.
+Zotero must be running with its Local API enabled. Reads and Chroma ONNX search remain local and side-effect-free; Chroma may download the MiniLM model once, but paper content never leaves the machine. Writes require `--confirm`, an explicit Session ID, and a protocol-compatible authenticated Extension. `add file PATH` copies a selected local PDF/EPUB into Zotero and recognizes it by default; it never downloads a document. A sole EPUB can be reported by `source`, but `read`/`find` require Markdown or PDF. `resolve ATTACHMENT_KEY --markdown PATH --confirm` resolves a standalone document already in Zotero.
 
 Full Text writes queue the affected Item for semantic refresh. The installed user systemd service runs `za-cli index worker`; `za-cli --json index worker --once` is available for one-shot operation and tests. The worker uses a cheap Zotero SQLite modification watermark, polls the durable queue, and sleeps while idle. A user timer first runs `index reconcile` about 15 minutes after activation, with randomized delay, and then about every 12 hours for full reconciliation.

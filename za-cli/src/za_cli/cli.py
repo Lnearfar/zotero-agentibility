@@ -97,7 +97,7 @@ class RootGroup(click.Group):
 @click.version_option(__version__, prog_name="za-cli")
 @click.pass_context
 def cli(ctx: click.Context, session_id: str | None, json_output: bool) -> None:
-    """Local Zotero navigation, retrieval, and confirmed Full Text import/adoption."""
+    """Local Zotero navigation, retrieval, document intake, and confirmed writes."""
     ctx.ensure_object(dict)
     ctx.obj["config"] = build_config(session_id, json_output)
 
@@ -370,7 +370,7 @@ def lookup(ctx: click.Context, item_key: str) -> None:
     emit(ctx, _database(ctx).lookup(item_key))
 
 
-@cli.command("source", help="Show the selected Markdown Full Text or fallback PDF.")
+@cli.command("source", help="Show the selected Markdown Full Text or fallback document.")
 @click.argument("item_key")
 @click.pass_context
 def source_command(ctx: click.Context, item_key: str) -> None:
@@ -378,7 +378,7 @@ def source_command(ctx: click.Context, item_key: str) -> None:
     emit(ctx, sources.resolve_for_item(_database(ctx), item_key, config.data_dir))
 
 
-@cli.command("read", help="Read bounded lines from the selected Full Text source.")
+@cli.command("read", help="Read bounded lines from the selected Markdown or PDF source.")
 @click.argument("item_key")
 @click.option("--start", default=1, show_default=True, type=int, help="First source line to read.")
 @click.option("--limit", default=200, show_default=True, type=int, help="Maximum source lines to read.")
@@ -398,7 +398,7 @@ def read_command(ctx: click.Context, item_key: str, start: int, limit: int, all_
         click.echo(f"\n[{item_key}, {result['attachmentKey']}, {result['location']}]", err=True)
 
 
-@cli.command("find", help="Find exact text in the selected Full Text source.")
+@cli.command("find", help="Find exact text in the selected Markdown or PDF source.")
 @click.argument("item_key")
 @click.argument("query")
 @click.option("--context", default=0, show_default=True, type=int, help="Surrounding lines per match.")

@@ -44,8 +44,22 @@ Requests use an exact fixed-operation envelope:
 {"protocol":1,"operation":"health","arguments":{}}
 ```
 
-The current Extension and `BridgeClient` allow exactly `health`,
+The current Extension and `BridgeClient` allow exactly `health`, `add_file`,
 `fulltext_adopt`, `fulltext_import`, and `metadata_resolve`.
+
+`add_file` imports one reviewed local PDF/EPUB through Zotero. `library_id` is
+present for future library scope, but the current operation requires My Library:
+
+```json
+{"protocol":1,"operation":"add_file","arguments":{"session_id":"agent-1","library_id":1,"source_path":"/home/user/paper.pdf","expected_sha256":"<64 lowercase hex>","collection_key":null,"parent_item_key":null}}
+```
+
+The Extension validates Zotero's native MIME result, filters exact attachment
+matches by live stored-file state and size, and uses Zotero's MD5 only as a
+prefilter before live stored-file SHA-256 comparison. It imports with
+`Zotero.Attachments.importFromFile` and revalidates the imported storage copy
+before its final transaction. A failed add erases only objects created by that
+operation; it never erases pre-existing Zotero objects.
 
 `fulltext_adopt` accepts an existing Markdown child attachment:
 
@@ -75,34 +89,37 @@ translator conflicts remain unresolved rather than creating guessed metadata.
 
 For adoption, the expected path is a stale-plan guard rather than an arbitrary
 source: the Extension resolves the live attachment path through Zotero and
-requires an exact match. Import is the only current operation that accepts an
-external path; it requires an absolute regular non-symlink `.md`, rejects
-distillations, revalidates the hash, and leaves the source file untouched. Both
+requires an exact match. `fulltext_import` and `add_file` are the only current
+operations that accept an external path. Both require an absolute regular
+non-symlink file, revalidate the imported copy, and leave the source untouched;
+Full Text import additionally requires `.md` and rejects distillations. Both
 Full Text operations limit writes to active regular items in My Library, import
 through `Zotero.Attachments.importFromFile`, validate the copied `fulltext.md`,
 then tag the new attachment and move explicitly selected old attachments to
 Zotero Trash in a final transaction. Adoption also trashes its source
-attachment. A five-second bounded global lock serializes bridge writes.
+attachment. A five-second bounded global lock serializes mutation-critical
+sections. A separate bounded add-flow guard serializes intake identity decisions
+while recognition and library scans run outside the global lock.
 
 ## Accepted native-first expansion
 
 The planned `item`, `attachment`, `collection`, `tag`, `note`, `duplicate`,
-`saved-search`, `add`, `import`, `export`, and `sync` groups will each map to
-named, schema-validated bridge operations. The operation owns one mutation
-intent and delegates to supported Zotero APIs: native document recognition for
-local PDF/EPUB intake, `Zotero.Attachments.importFromFile` for stored copies,
+`saved-search`, `add identifier/url`, `import`, `export`, and `sync` commands
+will each map to named, schema-validated bridge operations. Each operation owns
+one mutation intent and delegates to supported Zotero APIs:
 `Zotero.Translate.Search` for metadata-only identifier/URL/import paths, and
 live Zotero item/Collection/tag/note/duplicate/sync APIs for their respective
 resources. The CLI must not recreate those transactions with SQLite or local
 storage writes.
 
-The planned local-file path follows the [ingest contract](ingest.md): import a
+The installed local-file path follows the [ingest contract](ingest.md): import a
 copy, preserve the caller's source, recognize by default, bypass recognition
 only with `--parent`, reuse only exact identity/hash, roll back a same-Strong-
 Identifier/different-Source conflict, warn on fuzzy candidates, add an explicit
 Collection Membership only when a Collection Key is supplied (otherwise leave
-the result Unfiled), and mark the selected PDF with `za-cli:pdf`. Metadata-only
-network paths set `saveAttachments=false`; PDF
+the result Unfiled), and mark only a selected PDF with `za-cli:pdf`; a sole EPUB
+remains an unmarked fallback document. Metadata-only network paths set
+`saveAttachments=false`; PDF
 discovery, download, campus auth, cookies, and the decision to download remain
 with a Human or browser Skill.
 

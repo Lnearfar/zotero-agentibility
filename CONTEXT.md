@@ -31,15 +31,15 @@ The accuracy-first process that turns an **Unrecognized Document** into a **Lite
 _Avoid_: Manual parent creation, title-only matching, best-effort guessing
 
 **Source Document**:
-The explicitly tracked original full-text representation attached to a **Literature Item**, normally a PDF. Adding another PDF attachment does not replace the Source Document.
-_Avoid_: Markdown, note, any PDF attachment
+The selected original full-text representation attached to a **Literature Item**, normally a PDF and sometimes a sole EPUB. `za-cli:pdf` disambiguates only PDFs; a sole EPUB is an unmarked fallback. Adding another document attachment does not replace the Source Document.
+_Avoid_: Markdown, note, any document attachment
 
 **Markdown Full Text**:
 A text-first representation stored as a Zotero-owned child attachment of the same **Literature Item**. It is never a Zotero Note, even when a Note contains Markdown syntax. A Literature Item has exactly one designated Markdown Full Text once converted; it is preserved exactly as produced, including image references whose target files are not retained.
 _Avoid_: Note, annotation, summary, cleaned Markdown
 
 **Passage**:
-A line-addressable portion of a **Markdown Full Text** or fallback **Source Document** used for retrieval and exact verification. A Passage retains its source and location and is not a summary.
+A line-addressable portion of a **Markdown Full Text** or fallback PDF **Source Document** used for retrieval and exact verification. EPUB can establish identity and be reported as a source, but it requires reviewed Markdown before Passage reading or indexing. A Passage retains its source and location and is not a summary.
 _Avoid_: Summary, unsupported answer
 
 **Collection**:

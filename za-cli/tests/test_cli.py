@@ -27,17 +27,17 @@ class CliShapeTests(unittest.TestCase):
             "add       Add local PDF and EPUB documents through Zotero.",
             "app       Inspect Zotero and required local tools.",
             "cd        Change this session's current Collection.",
-            "find      Find exact text in the selected Full Text source.",
+            "find      Find exact text in the selected Markdown or PDF source.",
             "fulltext  Audit, import, and safely adopt canonical Markdown Full Text.",
             "index     Update and inspect the local semantic Passage index.",
             "lookup    Show metadata for a Literature Item.",
             "ls        List child Collections and Literature Items.",
             "resolve   Create a verified parent item for a standalone PDF or EPUB.",
             "pwd       Show this session's current Collection path.",
-            "read      Read bounded lines from the selected Full Text source.",
+            "read      Read bounded lines from the selected Markdown or PDF source.",
             "search    Search indexed Passages by semantic similarity.",
             "session   Create and inspect independent Browsing Sessions.",
-            "source    Show the selected Markdown Full Text or fallback PDF.",
+            "source    Show the selected Markdown Full Text or fallback document.",
         ):
             self.assertIn(summary, result.output)
         self.assertIn("za-cli COMMAND --help", result.output)

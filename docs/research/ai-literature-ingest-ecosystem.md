@@ -6,8 +6,8 @@
 
 需要区分**当前发布能力**与已接受的**目标控制面**：当前
 `zotero-agentibility` 已实现本地 Zotero 的读取、语义检索、来源核验、
-`resolve`，以及“已审阅 Markdown”的显式导入/采纳；当前 `za-cli` 还没有
-通用 `add`、RIS/BibTeX/DOI ingest、PDF 下载或通用 duplicate/merge 命令。
+本地 PDF/EPUB `add file`、`resolve`，以及“已审阅 Markdown”的显式导入/采纳；
+当前 `za-cli` 还没有 identifier/URL/RIS/BibTeX ingest、PDF 下载或通用 duplicate/merge 命令。
 已接受的下一步不是另造一个下载器，而是把 Zotero 原生能力放进 broad
 native-first fixed-operation CLI；命令是否发布仍以 Click command tree 为准。
 
@@ -20,7 +20,7 @@ core 可以联网，但范围更窄：已知 identifier、URL 或结构化 metad
 可以调用 Zotero 的 native translator 路径获取**元数据**，并且必须使用
 `saveAttachments=false`。这类联网不负责发现或下载 PDF，也不接收论文全文。
 需要字节时，Human/browser Skill 先把文件放到本地，之后 core 的 `add file`
-计划路径负责复制到 Zotero storage、保留源文件、默认 native recognize，或
+负责复制到 Zotero storage、保留源文件、默认 native recognize，或
 在显式 `--parent` 时跳过 recognize。
 
 ## 1. 当前仓库与目标控制面
@@ -30,11 +30,11 @@ core 可以联网，但范围更窄：已知 identifier、URL 或结构化 metad
 与 [`skills/research-with-zotero/references/mutations.md`](../../skills/research-with-zotero/references/mutations.md)：
 
 - **当前已实现：** `lookup`、`source`、`read`、`find`、`search`、Collection
-  浏览 Session、索引维护；`resolve ATTACHMENT_KEY`；`fulltext audit/adopt/import/migrate`。
-- **当前 PDF 边界：** `resolve` 接受已经在 Zotero 中的孤立 PDF/EPUB，先调用
-  Zotero 原生识别器；成功后返回父 Item Key。它不是 PDF downloader。`fulltext import`
-  接受审阅过的本地 `.md`，原样复制为 `fulltext.md`，不是 PDF ingest。
-- **已接受的扩展：** `add file`、item/attachment/Collection/tag/note/duplicate/
+  浏览 Session、索引维护；本地 `add file`；`resolve ATTACHMENT_KEY`；`fulltext audit/adopt/import/migrate`。
+- **当前 PDF 边界：** `add file` 接受 Human/browser Skill 已选择的本地 PDF/EPUB，
+  由 Zotero 复制并默认识别；`resolve` 处理已经在 Zotero 中的孤立文档。二者都不下载
+  PDF。`fulltext import` 接受审阅过的本地 `.md`，原样复制为 `fulltext.md`。
+- **已接受的扩展：** item/attachment/Collection/tag/note/duplicate/
   saved-search/add/import/export/sync 等资源组都通过固定、校验过的 native
   operation 进入 Zotero；read-only SQLite 只能加速读取，live Zotero 才是写权威。
 - **身份与重复：** 精确 Item Key、规范化 Strong Identifier 或相同源文件
@@ -45,9 +45,9 @@ core 可以联网，但范围更窄：已知 identifier、URL 或结构化 metad
 - **安全边界：** 不写 `zotero.sqlite`，不执行任意 Zotero JavaScript，不写
   group library，不永久删除；PDF acquisition 和 browser cookies 也不进入 core。
 
-因此，“当前版本是否支持 PDF 导入、去重/合并”的直接回答仍是：**当前发布
-CLI 不支持这些通用命令**；支持的是已存在 PDF 的识别，以及 Markdown Full Text
-的显式导入/采纳。目标控制面的可执行矩阵见
+因此，“当前版本是否支持 PDF 导入、去重/合并”的直接回答是：**支持用户选择的
+本地 PDF/EPUB 入库和精确复用；不负责 PDF 下载，也还没有通用 duplicate merge
+命令。** 已存在 PDF 的识别与 Markdown Full Text 导入/采纳继续可用。目标控制面的可执行矩阵见
 [docs/capabilities.md](../capabilities.md)。
 
 ## 2. 可借用的外部工具

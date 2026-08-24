@@ -1,6 +1,6 @@
 # Mutations
 
-Current installed writes are limited to `resolve`, `fulltext import`, `fulltext adopt`, and `fulltext migrate`. The accepted native-first additions are planned, not callable until they appear in `za-cli --help`. For unavailable additions, arbitrary metadata or Collection changes, duplicate merging, removal, and every other mutation, explain that boundary and stop; never simulate a missing command through SQLite or arbitrary JavaScript.
+Installed writes are `add file`, `resolve`, `fulltext import`, `fulltext adopt`, and `fulltext migrate`. Identifier/URL ingest, arbitrary metadata or Collection changes, duplicate merge commands, removal, and other planned mutations remain unavailable until they appear in `za-cli --help`; never simulate them through SQLite or arbitrary JavaScript.
 
 ## Rules
 
@@ -9,8 +9,14 @@ Current installed writes are limited to `resolve`, `fulltext import`, `fulltext 
 - Removal means Zotero Trash. Never request permanent deletion or empty Trash.
 - A Literature Item may belong to several Collections. Removing a Collection Membership does not remove the item.
 - Reuse an existing item only on exact Item Key, normalized DOI/arXiv/PMID/ISBN, or identical source SHA-256. Similar metadata is review-only.
-- The planned local `add file PATH` contract must not guess an unidentified parent: its default path uses native recognition, while `--parent ITEM_KEY` explicitly bypasses recognition. Until that command is installed, do not invoke or simulate it.
+- `add file PATH` uses native recognition by default; `--parent ITEM_KEY` explicitly bypasses recognition. Omitting `--collection KEY` means Unfiled, never the session cwd.
 - A different incoming PDF never replaces an existing Source Document automatically.
+
+## Local document intake
+
+Run `za-cli --session SESSION --json add file PATH [--collection KEY] [--parent ITEM_KEY] --confirm` only for a PDF/EPUB already selected by the Human or an external browser workflow. The command copies through Zotero and preserves the source. Report `added_unrecognized` as a successful standalone import, exact-match `reused` outcomes as idempotent, and Source/parent/identity ambiguity without retrying or merging. PDF discovery, download, campus authentication, and cookies are outside this project.
+
+A committed parent change queues index refresh automatically. If the result is `committed_with_index_warning`, preserve the Zotero outcome and retry only `index refresh --item ITEM_KEY`.
 
 ## Metadata resolution
 
@@ -24,7 +30,7 @@ Before import or adoption, identify the selected local path or Markdown attachme
 
 ## Index freshness
 
-- Successful `fulltext import`, `fulltext adopt`, and `fulltext migrate` durably queue the affected Item for the background index worker. Do not wait for embedding. If enqueueing fails after the Zotero write commits, report the index warning; `index refresh --item ITEM_KEY` can retry enqueueing.
+- Successful parent-changing `add file`, `fulltext import`, `fulltext adopt`, and `fulltext migrate` durably queue the affected Item for the background index worker. Do not wait for embedding. If enqueueing fails after the Zotero write commits, report the index warning; `index refresh --item ITEM_KEY` can retry enqueueing.
 - After the Agent observes a new or replaced PDF/Markdown attachment from Zotero sync or another approved tool, run `index refresh --item ITEM_KEY`. If affected keys are unknown or the change was a bulk sync, leave full reconciliation to explicit maintenance rather than blocking the current request.
 - Never ask the user to maintain the index manually.
 
