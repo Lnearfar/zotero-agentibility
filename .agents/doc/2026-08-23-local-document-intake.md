@@ -45,7 +45,7 @@ A failed intake erases only objects created by that operation through Zotero's n
 - Relative Markdown links/anchors: **passed for 22 Markdown files**.
 - Excalidraw JSON and `git diff --check`: **passed**.
 - Live Zotero 10 bridge health: **passed** (`extensionVersion=0.5.0`, protocol 1, `app doctor` READY).
-- A 0.5.0 spoofed-extension smoke exposed Zotero's filename MIME fallback and created test attachment `K35E7TSN`; 0.5.1 now rejects it in CLI review and requires native magic-byte agreement again in the Extension/imported copy. Native cleanup awaits explicit user authorization.
+- A 0.5.0 spoofed-extension smoke exposed Zotero's filename MIME fallback and created test attachment `K35E7TSN`; 0.5.1 now rejects it in CLI review and requires native magic-byte agreement again in the Extension/imported copy. With explicit user approval, a non-persistent Zotero Local API key erased that test object; a follow-up GET returned 404 and the one-time key was consumed.
 - Mutation-free exact-reuse/conflict smoke cases: **pending** to avoid running a full attachment scan while the user is active.
 
 ## Remaining gaps
