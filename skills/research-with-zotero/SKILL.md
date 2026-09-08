@@ -28,7 +28,7 @@ The installed CLI provides local semantic `search`, explicit index management, c
 ## Route
 
 - For semantic discovery, reading a known Item Key, quotation, or source verification, read and follow [references/retrieval.md](references/retrieval.md).
-- For navigation only, use `pwd`, `cd`, and `ls`; Collection paths navigate, while Item Keys identify Literature Items. Canonical absolute paths begin with `/My Library/`; `My Library/...` is accepted as the same absolute path, while other paths are relative to the current Collection. If a path is ambiguous, use the reported Collection Key with `cd --collection`.
+- For catalog listing, use `ls`; it defaults to My Library, accepts a Collection path, and accepts `--collection KEY` for an explicit Collection. Item Keys identify Literature Items. Canonical absolute paths begin with `/My Library/`; `My Library/...` is accepted as the same absolute path. If a path is ambiguous, use the reported Collection Key with `ls --collection`.
 - For additions, metadata changes, Collection Membership, full-text changes, duplicate handling, or removal, read and follow [references/mutations.md](references/mutations.md).
 - For adopting existing `source.md` or paper-named Markdown attachments in bulk, read and follow [references/migration.md](references/migration.md).
 
