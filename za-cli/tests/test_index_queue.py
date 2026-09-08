@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from za_cli.errors import CliError
 from za_cli.index_queue import IndexQueue
 
 
@@ -53,6 +54,20 @@ class IndexQueueTests(unittest.TestCase):
         self.assertEqual(db.calls, [("2026-08-20 10:00:00", "2026-08-20 10:01:00")])
         self.assertEqual(result["item_keys"], ["ABCD1234"])
         self.assertEqual(self.queue.status()["pending_items"], 1)
+
+    def test_cycle_processes_existing_queue_when_discovery_is_busy(self):
+        self.queue.discover(DB([]), until="2026-08-20 10:00:00")
+        self.queue.enqueue(["ABCD1234"])
+
+        class BusyDB:
+            def modified_literature_keys(self, since, until):
+                raise CliError("DATABASE_BUSY", "Zotero database is busy")
+
+        semantic = SemanticIndex()
+        result = self.queue.cycle(semantic, BusyDB(), self.root, until="2026-08-20 10:01:00")
+        self.assertTrue(result["discovery"]["deferred"])
+        self.assertEqual(semantic.calls, [["ABCD1234"]])
+        self.assertEqual(self.queue.status()["pending_items"], 0)
 
     def test_enqueue_is_durable_and_worker_coalesces_duplicate_keys(self):
         self.queue.enqueue(["ABCD1234", "ABCD1234", "EFGH5678"], reason="test")

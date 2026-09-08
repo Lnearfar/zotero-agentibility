@@ -295,20 +295,25 @@ class Database:
         return attachments
 
     def modified_literature_keys(self, since: str, until: str) -> list[str]:
-        with closing(connect_current(self.path)) as conn:
-            rows = conn.execute(
-                """SELECT DISTINCT parent.key,parent.itemID
-                   FROM items changed
-                   LEFT JOIN itemAttachments attachment ON attachment.itemID=changed.itemID
-                   JOIN items parent ON parent.itemID=COALESCE(attachment.parentItemID,changed.itemID)
-                   JOIN itemTypes parentType ON parentType.itemTypeID=parent.itemTypeID
-                   WHERE parent.libraryID=?
-                   AND parentType.typeName NOT IN ('attachment','note','annotation')
-                   AND changed.dateModified>=? AND changed.dateModified<=?
-                   AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=parent.itemID)
-                   ORDER BY parent.itemID""",
-                (self.library_id(), since, until),
-            ).fetchall()
+        try:
+            with closing(connect_current(self.path)) as conn:
+                rows = conn.execute(
+                    """SELECT DISTINCT parent.key,parent.itemID
+                       FROM items changed
+                       LEFT JOIN itemAttachments attachment ON attachment.itemID=changed.itemID
+                       JOIN items parent ON parent.itemID=COALESCE(attachment.parentItemID,changed.itemID)
+                       JOIN itemTypes parentType ON parentType.itemTypeID=parent.itemTypeID
+                       WHERE parent.libraryID=?
+                       AND parentType.typeName NOT IN ('attachment','note','annotation')
+                       AND changed.dateModified>=? AND changed.dateModified<=?
+                       AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=parent.itemID)
+                       ORDER BY parent.itemID""",
+                    (self.library_id(), since, until),
+                ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                raise CliError("DATABASE_BUSY", "Zotero database is busy; discovery will retry") from exc
+            raise
         return [row["key"] for row in rows]
 
     def index_inventory(self, item_keys: Iterable[str] | None = None) -> list[dict[str, Any]]:

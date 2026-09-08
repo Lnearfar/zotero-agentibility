@@ -170,7 +170,12 @@ class IndexQueue:
 
     def cycle(self, semantic_index, db, data_dir: Path, *, limit: int = 100,
               until: str | None = None) -> dict[str, Any]:
-        discovery = self.discover(db, until=until)
+        try:
+            discovery = self.discover(db, until=until)
+        except CliError as exc:
+            if exc.code != "DATABASE_BUSY":
+                raise
+            discovery = {"deferred": True, "code": exc.code}
         result = self.work_once(semantic_index, db, data_dir, limit=limit)
         result["discovery"] = discovery
         return result

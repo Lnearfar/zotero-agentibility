@@ -305,6 +305,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.6.2
+
+- Keep queued indexing active when Zotero temporarily holds its SQLite read lock; watermark discovery retains its cursor and retries without skipping Items.
+
 ### v0.6.1
 
 - Read committed SQLite WAL changes for worker watermark discovery, preventing newly added Items from being skipped before a checkpoint.
