@@ -14,7 +14,7 @@ from .config import RuntimeConfig, build_config
 from .db import Database
 from .errors import CliError
 from .http import probes, require_local_api
-from . import sessions, sources
+from . import sources
 
 
 def _json(value: Any) -> str:
@@ -92,14 +92,13 @@ class RootGroup(click.Group):
 
 
 @click.group(cls=RootGroup, epilog="Run 'za-cli COMMAND --help' for command options.")
-@click.option("--session", "session_id", help="Explicit Browsing Session ID.")
 @click.option("--json", "json_output", is_flag=True, help="Emit compact JSON.")
 @click.version_option(__version__, prog_name="za-cli")
 @click.pass_context
-def cli(ctx: click.Context, session_id: str | None, json_output: bool) -> None:
-    """Local Zotero navigation, retrieval, document intake, and confirmed writes."""
+def cli(ctx: click.Context, json_output: bool) -> None:
+    """Local Zotero retrieval, document intake, and confirmed writes."""
     ctx.ensure_object(dict)
-    ctx.obj["config"] = build_config(session_id, json_output)
+    ctx.obj["config"] = build_config(json_output)
 
 
 def _database(ctx: click.Context) -> Database:
@@ -204,52 +203,9 @@ def _run_add_file_write(ctx: click.Context, write) -> None:
     emit(ctx, result)
 
 
-def _session(ctx: click.Context) -> dict:
-    config = _config(ctx)
-    if not config.session_id:
-        raise CliError("SESSION_REQUIRED", "Pass --session with an explicit Browsing Session ID")
-    return sessions.load(config.config_dir, config.session_id)
-
-
 def _collection_scope(ctx: click.Context, db: Database, path: str) -> list[str]:
-    current_key = None
-    if not path.startswith("/") and path != "My Library":
-        state, _ = _validated_location(ctx, db, _session(ctx))
-        current_key = state.get("collection")
-    collection = db.resolve_collection(path, current_key)
+    collection = db.resolve_collection(path, None)
     return db.literature_keys(collection["key"] if collection else None)
-
-
-def _validated_location(ctx: click.Context, db: Database, state: dict) -> tuple[dict, dict | None]:
-    key = state.get("collection")
-    if not key:
-        return state, None
-    collection = db.collection_by_key(key)
-    if collection:
-        return state, None
-    state["collection"] = None
-    sessions.save(_config(ctx).config_dir, state)
-    return state, {"code": "COLLECTION_RESET", "message": f"Missing Collection {key}; reset to My Library"}
-
-
-@cli.group("session")
-def session_group() -> None:
-    """Create and inspect independent Browsing Sessions."""
-
-
-@session_group.command("create", help="Create an independent Browsing Session.")
-@click.argument("session_id", required=False)
-@click.pass_context
-def session_create(ctx: click.Context, session_id: str | None) -> None:
-    config = _config(ctx)
-    emit(ctx, sessions.create(config.config_dir, session_id or config.session_id))
-
-
-@session_group.command("status", help="Show the selected Browsing Session.")
-@click.pass_context
-def session_status(ctx: click.Context) -> None:
-    state = _session(ctx)
-    emit(ctx, {**state, "path": str(sessions.session_path(_config(ctx).config_dir, state["id"]))})
 
 
 @cli.group("app")
@@ -321,35 +277,6 @@ def app_doctor(ctx: click.Context, deep: bool) -> None:
         ctx.exit(1)
 
 
-@cli.command("pwd", help="Show this session's current Collection path.")
-@click.pass_context
-def pwd(ctx: click.Context) -> None:
-    db = _database(ctx)
-    state, warning = _validated_location(ctx, db, _session(ctx))
-    collection = db.collection_by_key(state["collection"]) if state["collection"] else None
-    emit(ctx, {"path": collection["path"] if collection else "/My Library", "collection": state["collection"], "warning": warning})
-
-
-@cli.command("cd", help="Change this session's current Collection.")
-@click.argument("target", required=False)
-@click.option("--collection", "collection_key", help="Select a Collection by stable key.")
-@click.pass_context
-def cd(ctx: click.Context, target: str | None, collection_key: str | None) -> None:
-    if bool(target) == bool(collection_key):
-        raise CliError("INVALID_ARGUMENT", "Provide exactly one collection path or --collection KEY")
-    db = _database(ctx)
-    state, warning = _validated_location(ctx, db, _session(ctx))
-    if collection_key:
-        collection = db.collection_by_key(collection_key)
-        if not collection:
-            raise CliError("COLLECTION_NOT_FOUND", f"Collection not found: {collection_key}")
-    else:
-        collection = db.resolve_collection(target or "", state.get("collection"))
-    state["collection"] = collection["key"] if collection else None
-    sessions.save(_config(ctx).config_dir, state)
-    emit(ctx, {"path": collection["path"] if collection else "/My Library", "collection": state["collection"], "warning": warning})
-
-
 @cli.command("ls", help="List child Collections and Literature Items.")
 @click.argument("target", required=False)
 @click.option("--collection", "collection_key", help="List a Collection by stable key.")
@@ -360,18 +287,16 @@ def ls_command(ctx: click.Context, target: str | None, collection_key: str | Non
     if target and collection_key:
         raise CliError("INVALID_ARGUMENT", "Use a collection path or --collection, not both")
     db = _database(ctx)
-    state, warning = _validated_location(ctx, db, _session(ctx))
-    key = state.get("collection")
+    key = None
     if collection_key:
         collection = db.collection_by_key(collection_key)
         if not collection:
             raise CliError("COLLECTION_NOT_FOUND", f"Collection not found: {collection_key}")
         key = collection["key"]
     elif target:
-        collection = db.resolve_collection(target, key)
+        collection = db.resolve_collection(target, None)
         key = collection["key"] if collection else None
     result = db.list_entries(key, offset=offset, limit=limit)
-    result["warning"] = warning
     emit(ctx, result)
 
 
@@ -588,14 +513,12 @@ def add_file(
 ) -> None:
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to add a local document")
-    state = _session(ctx)
     config = _config(ctx)
     db = _database(ctx)
     snapshot = sources.add_file_snapshot(db, path, collection_key, parent_item_key)
     _run_add_file_write(
         ctx,
         lambda: BridgeClient(config.port, config.config_dir / "bridge-token").add_file(
-            session_id=state["id"],
             library_id=snapshot["libraryID"],
             source_path=snapshot["sourcePath"],
             expected_sha256=snapshot["expectedSha256"],
@@ -618,14 +541,12 @@ def metadata_resolve(
 ) -> None:
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to resolve document metadata")
-    state = _session(ctx)
     config = _config(ctx)
     snapshot = sources.metadata_resolution_snapshot(
         _database(ctx), attachment_key, config.data_dir, markdown_path
     )
     try:
         result = BridgeClient(config.port, config.config_dir / "bridge-token").metadata_resolve(
-            session_id=state["id"],
             attachment_key=snapshot["attachmentKey"],
             expected_path=snapshot["expectedPath"],
             expected_sha256=snapshot["expectedSha256"],
@@ -679,7 +600,6 @@ def fulltext_adopt(
 ) -> None:
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to adopt Markdown Full Text")
-    state = _session(ctx)
     config = _config(ctx)
     db = _database(ctx)
     snapshot = sources.adoption_snapshot(
@@ -688,7 +608,6 @@ def fulltext_adopt(
     _run_fulltext_write(
         ctx, db, item_key,
         lambda: BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_adopt(
-            session_id=state["id"],
             item_key=snapshot["itemKey"],
             attachment_key=snapshot["attachmentKey"],
             expected_path=snapshot["expectedPath"],
@@ -713,14 +632,12 @@ def fulltext_import(
 ) -> None:
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to import Markdown Full Text")
-    state = _session(ctx)
     config = _config(ctx)
     db = _database(ctx)
     snapshot = sources.import_snapshot(db, item_key, markdown_path, replace_keys)
     _run_fulltext_write(
         ctx, db, item_key,
         lambda: BridgeClient(config.port, config.config_dir / "bridge-token").fulltext_import(
-            session_id=state["id"],
             item_key=snapshot["itemKey"],
             source_path=snapshot["sourcePath"],
             expected_sha256=snapshot["expectedSha256"],
@@ -736,7 +653,6 @@ def fulltext_import(
 def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to apply a reviewed migration plan")
-    state = _session(ctx)
     config = _config(ctx)
     db = _database(ctx)
     plan_path, candidates = sources.load_migration_candidates(plan, db, config.data_dir)
@@ -747,7 +663,6 @@ def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
     for candidate in candidates:
         try:
             result = bridge.fulltext_adopt(
-                session_id=state["id"],
                 item_key=candidate["itemKey"],
                 attachment_key=candidate["attachmentKey"],
                 expected_path=candidate["expectedPath"],

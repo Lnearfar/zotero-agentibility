@@ -15,13 +15,8 @@ za-cli
 ├── app
 │   ├── status
 │   └── doctor [--deep]
-├── session
-│   ├── create
-│   └── status
 ├── add
 │   └── file PATH [--collection KEY] [--parent KEY] --confirm
-├── pwd
-├── cd
 ├── ls
 ├── lookup ITEM_KEY
 ├── source ITEM_KEY
@@ -43,9 +38,9 @@ za-cli
     └── inspect
 ```
 
-The stable high-frequency top-level façade is `pwd`, `cd`, `ls`, `lookup`,
-`source`, `read`, `find`, `search`, and `resolve`. It stays top-level even as
-resource groups are added. `search` is passage-level semantic search, not a
+The stable high-frequency top-level façade is `ls`, `lookup`, `source`,
+`read`, `find`, `search`, and `resolve`. It stays top-level even as resource
+groups are added. `search` is passage-level semantic search, not a
 bibliographic web search. `resolve` operates on a PDF or EPUB that already
 exists in Zotero: it runs Zotero's native recognizer first and uses the
 reviewed Strong Identifier Markdown fallback only when needed.
@@ -54,8 +49,8 @@ reviewed Strong Identifier Markdown fallback only when needed.
 Zotero, recognizes by default, and never downloads a document. `source` reports
 a sole EPUB fallback, but `read` and `find` support only Markdown/PDF and return
 `UNSUPPORTED_SOURCE_FORMAT` for EPUB. `fulltext` and
-`index` are installed groups, not planned placeholders. `session` and `app` are
-also installed. Exact arguments and output envelopes belong to Click help.
+`index` and `app` are installed groups, not planned placeholders. Exact
+arguments and output envelopes belong to Click help.
 
 ## Planned resource-group tree
 
@@ -77,7 +72,6 @@ za-cli
 ├── sync status/run
 ├── fulltext          [installed; future additions remain fixed operations]
 ├── index             [installed; future additions remain fixed operations]
-├── session           [installed; future additions remain fixed operations]
 └── app               [installed; future additions remain fixed operations]
 ```
 
@@ -96,23 +90,15 @@ There is no `execute`, `js`, `eval`, or equivalent generic command in either
 tree. Arbitrary JavaScript and direct SQLite/storage writes are prohibited
 contract surfaces, not deferred aliases for a future implementation.
 
-## Scope, identity, and sessions
+## Scope and identity
 
-Collection navigation uses an explicit Browsing Session ID. Global semantic
-search, lookup, reading, and index management do not require one or inherit
-session cwd. The Skill creates a session only when a requested operation needs
-navigation state, preferring `ZA_CLI_SESSION` and then `PI_SESSION_ID`.
+Collection paths remain the human navigation interface. `ls` defaults to My
+Library; callers select another scope with a Collection path or `--collection
+KEY`. An ambiguous path fails with candidate keys. Every write addresses Items
+and Collections by explicit stable key. For `add file`, omitting `--collection
+KEY` means Unfiled.
 
-Collection paths remain the human navigation interface. Sessions store stable
-Collection Keys and recompute display paths; an ambiguous path fails with
-candidate keys, and `cd --collection KEY` resolves it explicitly. A trashed
-current Collection resets the session to its Library root with a warning.
-Every write addresses Items and Collections by explicit stable key and never
-inherits session cwd. For `add file`, omitting `--collection KEY` means Unfiled;
-it is not an implicit current-Collection write. Installed writes require an
-explicit Session ID for their content-free audit record.
-
-Multiple sessions may read concurrently. Every Zotero write requires
+Agents may read and search concurrently. Every Zotero write requires
 `--confirm`, uses one bounded global write lock, reloads live state, and appends
 an audit record. High-risk writes also have a read-only review operation.
 Destructive operations move objects to Zotero Trash; there is no

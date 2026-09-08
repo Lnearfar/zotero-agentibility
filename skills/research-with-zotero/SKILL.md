@@ -11,12 +11,11 @@ This is a human-directed, Zotero-owned workflow. The researcher sets goals and p
 
 ## Start
 
-Start the requested Zotero operation immediately. Do not run CLI help, `app doctor`, index status/update, or create a Browsing Session as routine preparation.
+Start the requested Zotero operation immediately. Do not run CLI help, `app doctor`, or index status/update as routine preparation.
 
 - For retrieval, follow `references/retrieval.md` and search the existing index first.
 - Run command help only when needed syntax is unknown or a command rejects the attempted syntax.
 - Run `za-cli --json app doctor` only after a CLI connectivity or dependency failure. Use `app doctor --deep` only for explicit index diagnosis.
-- Create one Browsing Session only when Collection navigation or another command requires it. Prefer `ZA_CLI_SESSION`, then `PI_SESSION_ID`; create the chosen ID if status returns `SESSION_NOT_FOUND`. Pass it explicitly to session-aware commands.
 - On `INDEX_UNINITIALIZED`, run `za-cli --json index update` once before retrying search. For explicit freshness, queue known Items with `index refresh --item KEY`; use synchronous `index update --collection PATH` for a known Collection. Do not run a full-library update in the request path when the changed scope is unknown.
 - When a recently added Zotero Item is missing from semantic search, inspect `index status`. A stopped worker means maintenance is degraded; restore the user service before treating the Item as absent. Metadata-only Items still require catalog lookup/list behavior because semantic search indexes usable source content.
 

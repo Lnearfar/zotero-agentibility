@@ -144,7 +144,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 | `~/.local/share/uv/tools/za-cli/` and `~/.local/bin/za-cli` | CLI environment and executable                                    |
 | Active Zotero profile `extensions/`                                 | Extension XPI, managed by Zotero                                  |
 | `~/.agents/skills/research-with-zotero/`                            | Runtime Agent instructions                                        |
-| `~/.config/zotero-agentibility/`                                     | Mode-`0600` bridge token, sessions, and write audit               |
+| `~/.config/zotero-agentibility/`                                     | Mode-`0600` bridge token and write audit                         |
 | `~/.local/share/zotero-agentibility/index/<profile>/`                | Profile-specific Chroma Passage index and durable refresh queue   |
 | `~/.config/systemd/user/zotero-agentibility-index-*`                 | User-level worker and reconciliation timer                        |
 | Zotero attachment storage                                           | Confirmed local PDF/EPUB copies and canonical `fulltext.md` imports         |
@@ -164,7 +164,7 @@ Zotero has no supported add-on-management CLI. Install the XPI manually once; la
 
 1. Search a Zotero Collection semantically, then verify the exact supporting Markdown lines or PDF pages.
 2. Read formula-heavy papers from reviewed Markdown rather than lossy PDF text extraction.
-3. Let multiple agents browse different Collections through independent Sessions.
+3. Let multiple agents inspect explicit Collections concurrently.
 4. Copy a user-selected local PDF/EPUB into Zotero, recognize it natively, and reuse exact existing records without downloading anything.
 5. Import a reviewed local Markdown file or adopt an existing Markdown attachment as canonical `fulltext.md` after explicit confirmation.
 
@@ -187,20 +187,17 @@ Zotero has no supported add-on-management CLI. Install the XPI manually once; la
 
    If search reports `INDEX_UNINITIALIZED`, initialize once with `za-cli --json index update`. Queue a known changed Item with `za-cli --json index refresh --item ITEM_KEY`; the installed user service processes it without blocking research.
 
-2. Create one Browsing Session only when Collection navigation matters:
+2. List My Library or name an explicit Collection:
 
    ```bash
-   session="${ZA_CLI_SESSION:-${PI_SESSION_ID:-research-1}}"
-   za-cli --json session create "$session"       # once
-   za-cli --session "$session" --json ls
-   za-cli --session "$session" --json cd "Project"
-   za-cli --session "$session" --json pwd
+   za-cli --json ls
+   za-cli --json ls --collection COLLECTION_KEY
    ```
 
 3. Add a local document only after the Human or an external browser workflow has selected it:
 
    ```bash
-   za-cli --session "$session" --json add file /path/to/paper.pdf --confirm
+   za-cli --json add file /path/to/paper.pdf --confirm
    ```
 
    Add `--collection COLLECTION_KEY` for explicit membership or `--parent ITEM_KEY` to attach without recognition. The project does not discover or download PDFs.
@@ -216,9 +213,8 @@ planned command groups are not published commands.
 | Command                       | Behavior                                                                             |
 | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `app doctor [--deep]`         | Validate the local stack from cached state; optionally reconcile index statistics   |
-| `session create/status`       | Manage independent per-agent navigation state                                        |
 | `add file`                    | Copy a local PDF/EPUB into Zotero, reuse exact matches, and recognize by default      |
-| `pwd`, `cd`, `ls`             | Navigate Collection paths without using Zotero UI selection                          |
+| `ls [PATH] [--collection KEY]` | List My Library or an explicit Collection                                           |
 | `lookup`, `source`            | Inspect Literature Item metadata and preferred attachment                            |
 | `read`, `find`                | Read bounded source lines or locate exact text; `read --all` emits complete raw text |
 | `index update/reconcile/status/refresh/worker/inspect` | Maintain, queue, process, and diagnose the profile-specific Passage index |
@@ -232,9 +228,7 @@ planned command groups are not published commands.
 <details>
 <summary><b>Runtime files and concurrency</b></summary>
 
-Browsing Sessions are separate mode-`0600` JSON files written atomically under `~/.config/zotero-agentibility/sessions/`. Each session stores a stable Collection Key, so two agents can navigate different Collections without sharing a hidden working directory.
-
-Semantic writes use a cross-process update lock and bounded Chroma batches. A user systemd service runs one long-lived `index worker`, which performs a lightweight Zotero SQLite modification-watermark query, polls the durable Item queue, and sleeps while idle. A low-priority timer performs full reconciliation about 15 minutes after activation and then about every 12 hours, with randomized delay. Reads and searches never wait for either process. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, Session ID, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
+Semantic writes use a cross-process update lock and bounded Chroma batches. A user systemd service runs one long-lived `index worker`, which performs a lightweight Zotero SQLite modification-watermark query, polls the durable Item queue, and sleeps while idle. A low-priority timer performs full reconciliation about 15 minutes after activation and then about every 12 hours, with randomized delay. Reads and searches never wait for either process. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
 
 </details>
 
@@ -310,6 +304,11 @@ rm -rf ~/.config/zotero-agentibility ~/.local/share/zotero-agentibility
 Removing project state does not remove Literature Items, PDFs, Markdown attachments, or Zotero's database.
 
 ## Development History
+
+### v0.6.0
+
+- Retired per-agent browsing Sessions and their hidden current-Collection state.
+- `ls` now defaults to My Library or accepts an explicit Collection path/key; bridge writes and audit records carry no session field.
 
 ### v0.5.1
 

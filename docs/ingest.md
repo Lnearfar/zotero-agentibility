@@ -3,7 +3,7 @@
 The installed local intake command is:
 
 ```text
-za-cli --session SESSION --json add file PATH [--collection COLLECTION_KEY] [--parent ITEM_KEY] --confirm
+za-cli --json add file PATH [--collection COLLECTION_KEY] [--parent ITEM_KEY] --confirm
 ```
 
 It imports a user-selected local PDF or EPUB through Zotero. General identifier/URL ingest, PDF acquisition, and duplicate merge remain planned.
@@ -11,7 +11,7 @@ It imports a user-selected local PDF or EPUB through Zotero. General identifier/
 ## `add file` contract
 
 1. **Zotero-owned copy.** `PATH` must be a regular non-symlink PDF or EPUB. The CLI records a SHA-256 review snapshot; the Extension requires Zotero's PDF/EPUB magic-byte sniffer to agree with the extension-derived MIME type, then calls `Zotero.Attachments.importFromFile`. Zotero copies the document into attachment storage. The source file is never moved, deleted, or rewritten.
-2. **Explicit placement.** `--collection COLLECTION_KEY` adds an explicit Collection Membership. Omitting it leaves a new top-level object Unfiled. The command never inherits a Browsing Session's current Collection. Reusing an existing Literature Item adds the requested membership without removing existing memberships.
+2. **Explicit placement.** `--collection COLLECTION_KEY` adds an explicit Collection Membership. Omitting it leaves a new top-level object Unfiled. Reusing an existing Literature Item adds the requested membership without removing existing memberships.
 3. **Default native recognition.** Without `--parent`, the Extension runs Zotero's native PDF/EPUB recognizer on the imported copy. A verified parent is used; failed or unverifiable recognition returns `added_unrecognized` and keeps the standalone Unrecognized Document rather than guessing metadata.
 4. **Explicit parent.** `--parent ITEM_KEY` attaches the imported copy to that live, editable My Library Literature Item and skips recognition. If the parent has no Source Document, the incoming PDF/EPUB becomes the selected source. If it already has a source, the incoming document remains an alternate and does not replace or acquire the source marker.
 5. **Source role.** Only a selected PDF child receives `za-cli:pdf`; a sole EPUB is an unmarked fallback Source Document. `source` reports its metadata and path, while `read`/`find` return `UNSUPPORTED_SOURCE_FORMAT` until reviewed Markdown exists. Standalone Unrecognized Documents receive no source role. `add file` never changes canonical Markdown Full Text.

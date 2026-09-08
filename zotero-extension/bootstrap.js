@@ -90,9 +90,9 @@ function _sameKeys(value, expected) {
 function _validateFulltextArguments(args, operation) {
   var importing = operation === "fulltext_import";
   var keys = importing
-    ? ["expected_sha256", "item_key", "replace_attachment_keys", "session_id", "source_path"]
+    ? ["expected_sha256", "item_key", "replace_attachment_keys", "source_path"]
     : ["expected_path", "expected_sha256", "item_key", "markdown_attachment_key",
-      "replace_attachment_keys", "session_id"];
+      "replace_attachment_keys"];
   if (!_sameKeys(args, keys)) {
     throw _operationError("BAD_ARGUMENTS", operation + " arguments do not match the schema", 400);
   }
@@ -100,11 +100,6 @@ function _validateFulltextArguments(args, operation) {
   if (!itemKey.test(args.item_key)
       || (!importing && !itemKey.test(args.markdown_attachment_key))) {
     throw _operationError("BAD_ARGUMENTS", "Item and attachment keys must be valid Zotero keys", 400);
-  }
-  if (typeof args.session_id !== "string"
-      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(args.session_id)
-      || args.session_id === "." || args.session_id === "..") {
-    throw _operationError("BAD_ARGUMENTS", "Session ID is invalid", 400);
   }
   var path = importing ? args.source_path : args.expected_path;
   if (typeof path !== "string" || path[0] !== "/"
@@ -131,8 +126,7 @@ function _validateFulltextArguments(args, operation) {
 }
 
 function _validateAddFileArguments(args) {
-  var keys = ["collection_key", "expected_sha256", "library_id", "parent_item_key",
-    "session_id", "source_path"];
+  var keys = ["collection_key", "expected_sha256", "library_id", "parent_item_key", "source_path"];
   if (!_sameKeys(args, keys)) {
     throw _operationError("BAD_ARGUMENTS", "add_file arguments do not match the schema", 400);
   }
@@ -148,11 +142,6 @@ function _validateAddFileArguments(args) {
       && (typeof args.parent_item_key !== "string" || !itemKey.test(args.parent_item_key))) {
     throw _operationError("BAD_ARGUMENTS", "Parent Item Key must be a valid Zotero key or null", 400);
   }
-  if (typeof args.session_id !== "string"
-      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(args.session_id)
-      || args.session_id === "." || args.session_id === "..") {
-    throw _operationError("BAD_ARGUMENTS", "Session ID is invalid", 400);
-  }
   if (typeof args.source_path !== "string" || args.source_path[0] !== "/"
       || args.source_path.length > 2048 || args.source_path.indexOf("\0") !== -1
       || !/\.(?:pdf|epub)$/i.test(args.source_path)) {
@@ -166,18 +155,12 @@ function _validateAddFileArguments(args) {
 }
 
 function _validateMetadataArguments(args) {
-  var keys = ["attachment_key", "expected_path", "expected_sha256", "markdown_path",
-    "markdown_sha256", "session_id"];
+  var keys = ["attachment_key", "expected_path", "expected_sha256", "markdown_path", "markdown_sha256"];
   if (!_sameKeys(args, keys)) {
     throw _operationError("BAD_ARGUMENTS", "metadata_resolve arguments do not match the schema", 400);
   }
   if (!/^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/.test(args.attachment_key)) {
     throw _operationError("BAD_ARGUMENTS", "Attachment Key must be a valid Zotero key", 400);
-  }
-  if (typeof args.session_id !== "string"
-      || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(args.session_id)
-      || args.session_id === "." || args.session_id === "..") {
-    throw _operationError("BAD_ARGUMENTS", "Session ID is invalid", 400);
   }
   if (typeof args.expected_path !== "string" || args.expected_path[0] !== "/"
       || args.expected_path.length > 2048 || args.expected_path.indexOf("\0") !== -1
@@ -648,7 +631,7 @@ async function _executeMetadataResolve(args) {
   catch (error) {
     try {
       await _withWriteLock(function () {
-        _appendAudit(auditFile, args.session_id, "metadata_resolve", [args.attachment_key], "failure",
+        _appendAudit(auditFile, "metadata_resolve", [args.attachment_key], "failure",
           error.bridgeCode || "INTERNAL_ERROR");
       });
     }
@@ -659,7 +642,7 @@ async function _executeMetadataResolve(args) {
   }
   try {
     await _withWriteLock(function () {
-      _appendAudit(auditFile, args.session_id, "metadata_resolve",
+      _appendAudit(auditFile, "metadata_resolve",
         [result.attachment_key, result.parent_item_key], "success", null);
     });
   }
@@ -1150,7 +1133,7 @@ async function _executeAddFile(args) {
       try {
         var failureDetails = error.safeDetails || {};
         await _withWriteLock(function () {
-          _appendAudit(auditFile, args.session_id, "add_file", [
+          _appendAudit(auditFile, "add_file", [
             args.parent_item_key, args.collection_key,
             failureDetails.attachment_key, failureDetails.incoming_attachment_key,
             failureDetails.existing_item_key, failureDetails.existing_source_document_key
@@ -1164,7 +1147,7 @@ async function _executeAddFile(args) {
     }
     try {
       await _withWriteLock(function () {
-        _appendAudit(auditFile, args.session_id, "add_file", [
+        _appendAudit(auditFile, "add_file", [
           result.attachment_key, result.parent_item_key, args.collection_key
         ], "success", null);
       });
@@ -1205,13 +1188,12 @@ function _prepareAuditFile() {
   return file;
 }
 
-function _appendAudit(file, sessionId, operation, affectedKeys, result, errorCode) {
+function _appendAudit(file, operation, affectedKeys, result, errorCode) {
   var output = Cc["@mozilla.org/network/file-output-stream;1"]
     .createInstance(Ci.nsIFileOutputStream);
   output.init(file, 0x02 | 0x08 | 0x10, 0o600, 0);
   var data = JSON.stringify({
     time: new Date().toISOString(),
-    sessionId: sessionId,
     operation: operation,
     affectedKeys: affectedKeys.filter(function (key, index, keys) {
       return typeof key === "string" && key && keys.indexOf(key) === index;
@@ -1504,7 +1486,7 @@ async function _executeFulltextWrite(operation, args) {
         var failedKeys = error.rollbackAttachmentKey ? affected.concat([error.rollbackAttachmentKey]) : affected;
         var failureResult = error.rollbackResult === "failed" ? "failure_rollback_failed"
           : error.rollbackResult === "trashed" ? "failure_rolled_back" : "failure";
-        _appendAudit(auditFile, args.session_id, operation, failedKeys, failureResult,
+        _appendAudit(auditFile, operation, failedKeys, failureResult,
           error.bridgeCode || "INTERNAL_ERROR");
       }
       catch (auditError) {
@@ -1513,7 +1495,7 @@ async function _executeFulltextWrite(operation, args) {
       throw error;
     }
     try {
-      _appendAudit(auditFile, args.session_id, operation,
+      _appendAudit(auditFile, operation,
         affected.concat([result.markdown_attachment_key, result.source_document_key]), "success", null);
     }
     catch (auditError) {

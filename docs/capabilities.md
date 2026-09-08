@@ -13,7 +13,7 @@ Named milestones avoid ambiguous phase numbers:
 
 | Milestone | Exit condition |
 | --- | --- |
-| **Current Surface** | Existing navigation, retrieval, indexing, session/app, native recognition, and Markdown Full Text paths stay documented and validated. |
+| **Current Surface** | Existing catalog navigation, retrieval, indexing, app health, native recognition, and Markdown Full Text paths stay documented and validated. |
 | **Local Document Intake** | **Installed.** `add file` copies a local PDF/EPUB into Zotero storage, preserves the source, applies the accepted identity/recognition/conflict behavior, uses an explicit Collection Key when requested or leaves the result Unfiled, and works in My Library. |
 | **Library Organization** | Collection CRUD/membership, tags, and recoverable Trash/restore use native Zotero operations and explicit resource keys. |
 | **Resource Editing** | Item metadata, creators, Notes, attachments, Related Items, and saved searches use bounded schemas and native Zotero validation. |
@@ -28,9 +28,9 @@ Named milestones avoid ambiguous phase numbers:
 
 | Zotero-native capability | Fixed `za-cli` command surface | Main risk and required guardrail | Status | Milestone |
 | --- | --- | --- | --- | --- |
-| Read the local catalog and navigate Collections | `pwd`, `cd`, `ls`, `lookup`, `source` | The read-only SQLite snapshot can be stale or schema-incompatible. Revalidate live state before a write; address Items by Item Key. | **installed** | Current Surface |
+| Read the local catalog and navigate Collections | `ls`, `lookup`, `source` | The read-only SQLite snapshot can be stale or schema-incompatible. Revalidate live state before a write; address Items by Item Key and Collections by explicit path or Collection Key. | **installed** | Current Surface |
 | Retrieve grounded Passages | `read`, `find`, `search` | Semantic results are leads and indexing can be asynchronous or partial. Read the source Passage or PDF page before making a claim. | **installed** | Current Surface |
-| Isolate navigation and inspect runtime health | `session create/status`, `app status/doctor` | Shared navigation state and incompatible bridge versions can produce unsafe assumptions. Use explicit Session IDs and protocol checks. | **installed** | Current Surface |
+| Inspect runtime health | `app status/doctor` | Incompatible bridge versions can produce unsafe assumptions. Use protocol checks. | **installed** | Current Surface |
 | Recognize an existing standalone PDF/EPUB | `resolve ATTACHMENT_KEY [--markdown PATH] --confirm` | Zotero recognition can fail or return an unsafe match. Keep the attachment, require verified identity, and leave unresolved documents unresolved. | **installed** | Current Surface |
 | Adopt or import canonical Markdown Full Text | `fulltext audit/adopt/import/migrate` | Paths, hashes, Source selection, and replacement keys can go stale. Validate live state, preserve local sources, and move replaced objects only to Trash. | **installed** | Current Surface |
 | Maintain the local Passage index | `index update/reconcile/status/refresh/worker/inspect` | Maintenance must not block retrieval or silently erase usable records. Keep the durable queue, bounded worker, and partial-coverage report. | **installed** | Current Surface |
@@ -40,7 +40,7 @@ Named milestones avoid ambiguous phase numbers:
 | Report fuzzy duplicate candidates during intake | `add file` | `Zotero.Duplicates` title/creator/year evidence is a candidate only. Add with a warning; never auto-reuse or auto-merge from fuzzy evidence. | **installed** | Local Document Intake |
 | Create, inspect, edit, trash, and restore Literature Items | `item get/list/create/update/trash/restore`, `item relate/unrelate` | Mutable titles are not identity. `item update` uses a restricted Zotero JSON patch; tags, Collections, children, and relations stay separate. | **planned** | Resource Editing |
 | Manage child attachments and Source selection | `attachment list/get/add/link/recognize/rename/reparent/trash/restore/select-source` | Use Zotero attachment APIs, preserve alternatives, and never mark every PDF as `za-cli:pdf`. Linked files are a later explicit slice, not `add file`. | **planned** | Resource Editing |
-| Create and organize Collections | `collection list/get/create/rename/move/trash/restore/add-item/remove-item` | Membership removal is not Item deletion. Writes use explicit Collection Keys and never inherit session cwd. Membership changes are idempotent. | **planned** | Library Organization |
+| Create and organize Collections | `collection list/get/create/rename/move/trash/restore/add-item/remove-item` | Membership removal is not Item deletion. Writes use explicit Collection Keys. Membership changes are idempotent. | **planned** | Library Organization |
 | Manage tags | `tag list/items/add/remove/rename/color` | Tag collisions and reserved role tags can change source selection. Delegate normalization/merge to Zotero and preserve `za-cli:md`/`za-cli:pdf` semantics. | **planned** | Library Organization |
 | Manage Zotero Notes | `note list/get/create/update/trash/restore` | Notes are Zotero HTML and are not Markdown Full Text. Keep bodies out of audit records; do not invent a Markdown converter. | **planned** | Resource Editing |
 | Detect, review, and merge Duplicate Items | `duplicate list/review/merge --keeper ITEM_KEY --confirm` | Use `Zotero.Duplicates` and native merge. The keeper's fields win initially; conflicting `za-cli:md` or `za-cli:pdf` roles block merge until selected. | **planned** | Duplicate Management |

@@ -57,7 +57,6 @@ class BridgeTests(unittest.TestCase):
             token.write_text("a" * 64 + "\n", encoding="utf-8")
             os.chmod(token, 0o600)
             result = BridgeClient(23119, token).metadata_resolve(
-                session_id="agent-1",
                 attachment_key="KUS9YXK3",
                 expected_path="/tmp/book.pdf",
                 expected_sha256="b" * 64,
@@ -69,7 +68,6 @@ class BridgeTests(unittest.TestCase):
             "protocol": 1,
             "operation": "metadata_resolve",
             "arguments": {
-                "session_id": "agent-1",
                 "attachment_key": "KUS9YXK3",
                 "expected_path": "/tmp/book.pdf",
                 "expected_sha256": "b" * 64,
@@ -89,7 +87,6 @@ class BridgeTests(unittest.TestCase):
             token.write_text("a" * 64 + "\n", encoding="utf-8")
             os.chmod(token, 0o600)
             result = BridgeClient(23119, token).add_file(
-                session_id="agent-1",
                 library_id=1,
                 source_path="/tmp/paper.pdf",
                 expected_sha256="b" * 64,
@@ -101,7 +98,6 @@ class BridgeTests(unittest.TestCase):
             "protocol": 1,
             "operation": "add_file",
             "arguments": {
-                "session_id": "agent-1",
                 "library_id": 1,
                 "source_path": "/tmp/paper.pdf",
                 "expected_sha256": "b" * 64,
@@ -122,8 +118,7 @@ class BridgeTests(unittest.TestCase):
             os.chmod(token, 0o600)
             with self.assertRaises(CliError) as caught:
                 BridgeClient(23119, token).add_file(
-                    session_id="agent-1",
-                    library_id=1,
+                        library_id=1,
                     source_path="/tmp/paper.pdf",
                     expected_sha256="b" * 64,
                     collection_key=None,
@@ -141,7 +136,6 @@ class BridgeTests(unittest.TestCase):
             token.write_text("a" * 64 + "\n", encoding="utf-8")
             os.chmod(token, 0o600)
             result = BridgeClient(23119, token).fulltext_adopt(
-                session_id="agent-1",
                 item_key="ABCD2345",
                 attachment_key="EFGH6789",
                 expected_path="/tmp/source.md",
@@ -153,7 +147,6 @@ class BridgeTests(unittest.TestCase):
             "protocol": 1,
             "operation": "fulltext_adopt",
             "arguments": {
-                "session_id": "agent-1",
                 "item_key": "ABCD2345",
                 "markdown_attachment_key": "EFGH6789",
                 "expected_path": "/tmp/source.md",
@@ -173,7 +166,6 @@ class BridgeTests(unittest.TestCase):
             token.write_text("a" * 64 + "\n", encoding="utf-8")
             os.chmod(token, 0o600)
             result = BridgeClient(23119, token).fulltext_import(
-                session_id="agent-1",
                 item_key="ABCD2345",
                 source_path="/tmp/converted.md",
                 expected_sha256="b" * 64,
@@ -184,7 +176,6 @@ class BridgeTests(unittest.TestCase):
             "protocol": 1,
             "operation": "fulltext_import",
             "arguments": {
-                "session_id": "agent-1",
                 "item_key": "ABCD2345",
                 "source_path": "/tmp/converted.md",
                 "expected_sha256": "b" * 64,

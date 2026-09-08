@@ -47,7 +47,7 @@ A named grouping of **Literature Items**. A Literature Item may belong to multip
 _Avoid_: Folder, directory
 
 **Collection Key**:
-The stable Zotero identifier used internally by a Browsing Session and to disambiguate Collections with the same path name. Paths remain the normal navigation interface.
+The stable Zotero identifier used to disambiguate Collections with the same path name. Paths remain the normal navigation interface.
 _Avoid_: Item Key, Collection name
 
 **Collection Membership**:
@@ -65,10 +65,6 @@ _Avoid_: Another Collection Membership, similar paper
 **Trash**:
 Zotero's recoverable destination for items, attachments, or Collections removed through the CLI. The CLI never permanently purges Trash.
 _Avoid_: Permanent deletion, removal from a Collection
-
-**Browsing Session**:
-An independent navigation context owned by one agent or person, with its own active library and current Collection. Multiple Browsing Sessions may inspect the same library without changing each other's location.
-_Avoid_: Global working directory, Zotero UI selection
 
 ## Example dialogue
 
@@ -92,9 +88,9 @@ _Avoid_: Global working directory, Zotero UI selection
 >
 > **Agent:** No. Only that Collection Membership is removed; the same Literature Item and its other memberships remain.
 >
-> **Researcher:** Can two agents browse different Collections at the same time?
+> **Researcher:** Can two agents inspect different Collections at the same time?
 >
-> **Agent:** Yes. Each agent uses its own Browsing Session, so changing one current Collection does not affect the other.
+> **Agent:** Yes. Each command names its Collection path or Collection Key, so concurrent work has no shared navigation state.
 >
 > **Researcher:** The semantic result mentions a stability proof. Can you verify it?
 >

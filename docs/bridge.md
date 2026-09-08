@@ -51,7 +51,7 @@ The current Extension and `BridgeClient` allow exactly `health`, `add_file`,
 present for future library scope, but the current operation requires My Library:
 
 ```json
-{"protocol":1,"operation":"add_file","arguments":{"session_id":"agent-1","library_id":1,"source_path":"/home/user/paper.pdf","expected_sha256":"<64 lowercase hex>","collection_key":null,"parent_item_key":null}}
+{"protocol":1,"operation":"add_file","arguments":{"library_id":1,"source_path":"/home/user/paper.pdf","expected_sha256":"<64 lowercase hex>","collection_key":null,"parent_item_key":null}}
 ```
 
 The Extension requires Zotero's magic-byte sniffer to agree with the PDF/EPUB
@@ -65,13 +65,13 @@ operation; it never erases pre-existing Zotero objects.
 `fulltext_adopt` accepts an existing Markdown child attachment:
 
 ```json
-{"protocol":1,"operation":"fulltext_adopt","arguments":{"session_id":"agent-1","item_key":"ABCD2345","markdown_attachment_key":"EFGH6789","expected_path":"/home/user/Zotero/storage/EFGH6789/source.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
+{"protocol":1,"operation":"fulltext_adopt","arguments":{"item_key":"ABCD2345","markdown_attachment_key":"EFGH6789","expected_path":"/home/user/Zotero/storage/EFGH6789/source.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
 ```
 
 `fulltext_import` accepts a reviewed local Markdown file:
 
 ```json
-{"protocol":1,"operation":"fulltext_import","arguments":{"session_id":"agent-1","item_key":"ABCD2345","source_path":"/home/user/converted/paper.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
+{"protocol":1,"operation":"fulltext_import","arguments":{"item_key":"ABCD2345","source_path":"/home/user/converted/paper.md","expected_sha256":"<64 lowercase hex>","replace_attachment_keys":[]}}
 ```
 
 `metadata_resolve` creates a verified parent Literature Item for a standalone
@@ -80,7 +80,7 @@ exactly one Strong Identifier from reviewed Markdown through Zotero's search
 translators. Its translator path is metadata-only and uses `saveAttachments=false`:
 
 ```json
-{"protocol":1,"operation":"metadata_resolve","arguments":{"session_id":"agent-1","attachment_key":"KUS9YXK3","expected_path":"/home/user/Zotero/storage/KUS9YXK3/book.pdf","expected_sha256":"<64 lowercase hex>","markdown_path":"/home/user/converted/book.md","markdown_sha256":"<64 lowercase hex>"}}
+{"protocol":1,"operation":"metadata_resolve","arguments":{"attachment_key":"KUS9YXK3","expected_path":"/home/user/Zotero/storage/KUS9YXK3/book.pdf","expected_sha256":"<64 lowercase hex>","markdown_path":"/home/user/converted/book.md","markdown_sha256":"<64 lowercase hex>"}}
 ```
 
 The operation preserves Collection Memberships, reparents the original

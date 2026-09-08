@@ -9,12 +9,12 @@ Installed writes are `add file`, `resolve`, `fulltext import`, `fulltext adopt`,
 - Removal means Zotero Trash. Never request permanent deletion or empty Trash.
 - A Literature Item may belong to several Collections. Removing a Collection Membership does not remove the item.
 - Reuse an existing item only on exact Item Key, normalized DOI/arXiv/PMID/ISBN, or identical source SHA-256. Similar metadata is review-only.
-- `add file PATH` uses native recognition by default; `--parent ITEM_KEY` explicitly bypasses recognition. Omitting `--collection KEY` means Unfiled, never the session cwd.
+- `add file PATH` uses native recognition by default; `--parent ITEM_KEY` explicitly bypasses recognition. Omitting `--collection KEY` means Unfiled.
 - A different incoming PDF never replaces an existing Source Document automatically.
 
 ## Local document intake
 
-Run `za-cli --session SESSION --json add file PATH [--collection KEY] [--parent ITEM_KEY] --confirm` only for a PDF/EPUB already selected by the Human or an external browser workflow. The command copies through Zotero and preserves the source. Report `added_unrecognized` as a successful standalone import, exact-match `reused` outcomes as idempotent, and Source/parent/identity ambiguity without retrying or merging. PDF discovery, download, campus authentication, and cookies are outside this project.
+Run `za-cli --json add file PATH [--collection KEY] [--parent ITEM_KEY] --confirm` only for a PDF/EPUB already selected by the Human or an external browser workflow. The command copies through Zotero and preserves the source. Report `added_unrecognized` as a successful standalone import, exact-match `reused` outcomes as idempotent, and Source/parent/identity ambiguity without retrying or merging. PDF discovery, download, campus authentication, and cookies are outside this project.
 
 A committed parent change queues index refresh automatically. If the result is `committed_with_index_warning`, preserve the Zotero outcome and retry only `index refresh --item ITEM_KEY`.
 

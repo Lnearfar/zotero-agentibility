@@ -112,7 +112,6 @@ class BridgeClient:
     def add_file(
         self,
         *,
-        session_id: str,
         library_id: int,
         source_path: str,
         expected_sha256: str,
@@ -120,7 +119,6 @@ class BridgeClient:
         parent_item_key: str | None,
     ) -> dict:
         response = self.operation("add_file", {
-            "session_id": session_id,
             "library_id": library_id,
             "source_path": source_path,
             "expected_sha256": expected_sha256,
@@ -140,7 +138,6 @@ class BridgeClient:
     def metadata_resolve(
         self,
         *,
-        session_id: str,
         attachment_key: str,
         expected_path: str,
         expected_sha256: str,
@@ -148,7 +145,6 @@ class BridgeClient:
         markdown_sha256: str | None,
     ) -> dict:
         response = self.operation("metadata_resolve", {
-            "session_id": session_id,
             "attachment_key": attachment_key,
             "expected_path": expected_path,
             "expected_sha256": expected_sha256,
@@ -166,7 +162,6 @@ class BridgeClient:
     def fulltext_adopt(
         self,
         *,
-        session_id: str,
         item_key: str,
         attachment_key: str,
         expected_path: str,
@@ -174,7 +169,6 @@ class BridgeClient:
         replace_attachment_keys: list[str],
     ) -> dict:
         response = self.operation("fulltext_adopt", {
-            "session_id": session_id,
             "item_key": item_key,
             "markdown_attachment_key": attachment_key,
             "expected_path": expected_path,
@@ -192,14 +186,12 @@ class BridgeClient:
     def fulltext_import(
         self,
         *,
-        session_id: str,
         item_key: str,
         source_path: str,
         expected_sha256: str,
         replace_attachment_keys: list[str],
     ) -> dict:
         response = self.operation("fulltext_import", {
-            "session_id": session_id,
             "item_key": item_key,
             "source_path": source_path,
             "expected_sha256": expected_sha256,

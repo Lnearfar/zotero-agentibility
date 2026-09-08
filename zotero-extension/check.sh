@@ -63,6 +63,10 @@ require bootstrap.js 'expectedAttachmentSha256'
 require bootstrap.js 'isEPUBAttachment()'
 require bootstrap.js 'application/epub+zip'
 require bootstrap.js 'audit.jsonl'
+if grep -Eq 'session_id|sessionId' bootstrap.js; then
+  printf 'bootstrap.js retains retired browsing-session state\n' >&2
+  exit 1
+fi
 if grep -Eq 'Zotero\.DB\.(queryAsync|executeSQL)|OS\.File\.(copy|move|write)|IOUtils\.write' bootstrap.js; then
   printf 'bootstrap.js contains prohibited direct database or storage writes\n' >&2
   exit 1
