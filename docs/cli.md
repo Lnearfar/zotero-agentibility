@@ -140,7 +140,9 @@ browser Skill. The core accepts a local file or an existing Zotero item and
 never sends paper Full Text to a metadata route.
 
 `app doctor` checks Zotero, the shared bearer token, bridge protocol, required
-Linux tools, database schema, and cached index state. `index worker` is a
-long-lived foreground process installed through user systemd; the timer runs
-`index reconcile` for maintenance. Search remains on the current index snapshot
-and never performs a hidden update.
+Linux tools, database schema, cached index state, and whether the index worker is
+running. A stopped worker makes the result `DEGRADED`, because new Zotero
+changes cannot reach the index. `index worker` is a long-lived foreground
+process installed through user systemd; the timer runs `index reconcile` for
+maintenance. Search remains on the current index snapshot and never performs a
+hidden update.

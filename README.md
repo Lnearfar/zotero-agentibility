@@ -137,7 +137,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 - a Zotero Extension: **Zotero-Agentibility Bridge**;
 - a user-level background index worker and reconciliation timer (first run about 15 minutes after activation, then about every 12 hours, with randomized delay).
 
-`doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, and cached semantic-index state. `doctor --deep` performs the expensive Passage-statistics reconciliation only for explicit diagnosis.
+`doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, cached semantic-index state, and whether the background index worker is running. A stopped worker reports `DEGRADED`; `doctor --deep` performs the expensive Passage-statistics reconciliation only for explicit diagnosis.
 
 | What it touches                                                     | Purpose                                                           |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------- |

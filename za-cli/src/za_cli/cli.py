@@ -296,6 +296,14 @@ def app_doctor(ctx: click.Context, deep: bool) -> None:
         index["ok"] = True
     except Exception as error:
         index = {"ok": False, "error": {"code": getattr(error, "code", "INDEX_ERROR"), "message": str(error)}}
+    queue = _index_queue(ctx).status()
+    index["queue"] = queue
+    index["maintenance"] = {
+        "ok": queue.get("worker_running") is True,
+        "worker_running": queue.get("worker_running", False),
+        "refreshing": queue.get("refreshing", False),
+        "pending_items": queue.get("pending_items", 0),
+    }
     database = {"ok": False, "path": str(config.data_dir / "zotero.sqlite")}
     if app["ready"]:
         try:
@@ -303,7 +311,11 @@ def app_doctor(ctx: click.Context, deep: bool) -> None:
         except CliError as exc:
             database["error"] = {"code": exc.code, "message": exc.message}
     checks = {"zotero": app, "database": database, "token": token, "bridge": bridge, "tools": tools, "index": index}
-    ready = app["ready"] and database["ok"] and token["ok"] and bridge["ok"] and bridge["protocol"] == PROTOCOL and index["ok"] and all(v["ok"] for v in tools.values())
+    ready = (
+        app["ready"] and database["ok"] and token["ok"] and bridge["ok"]
+        and bridge["protocol"] == PROTOCOL and index["ok"]
+        and index["maintenance"]["ok"] and all(v["ok"] for v in tools.values())
+    )
     emit(ctx, {"ready": ready, "protocol": PROTOCOL, "checks": checks}, ok=ready, code="READY" if ready else "DEGRADED")
     if not ready:
         ctx.exit(1)

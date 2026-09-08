@@ -426,6 +426,7 @@ class CliShapeTests(unittest.TestCase):
              mock.patch("za_cli.cli.BridgeClient") as bridge, \
              mock.patch("za_cli.cli.Database") as database, \
              mock.patch("za_cli.cli._semantic_index") as semantic_index, \
+             mock.patch("za_cli.cli._index_queue") as queue, \
              mock.patch("za_cli.cli.shutil.which", return_value="/usr/bin/tool"):
             bridge.return_value.health.return_value = {
                 "ok": True,
@@ -434,11 +435,44 @@ class CliShapeTests(unittest.TestCase):
             }
             database.return_value.schema_check.return_value = {"ok": True}
             semantic_index.return_value.status.return_value = {}
+            queue.return_value.status.return_value = {"worker_running": True, "refreshing": False}
             result = CliRunner().invoke(cli, ["--json", "app", "doctor"])
         self.assertEqual(result.exit_code, 0, result.output)
         semantic_index.return_value.status.assert_called_once_with()
         payload = json.loads(result.stdout)
         self.assertTrue(payload["data"]["checks"]["bridge"]["ok"])
+        self.assertTrue(payload["data"]["checks"]["index"]["maintenance"]["ok"])
+
+    def test_doctor_reports_stopped_index_worker_as_degraded(self):
+        app = {"ready": True, "running": True, "ping": {"ok": True}, "localApi": {"ok": True}}
+        with mock.patch("za_cli.cli.probes", return_value=app), \
+             mock.patch("za_cli.cli.token_status", return_value={"ok": True}), \
+             mock.patch("za_cli.cli.BridgeClient") as bridge, \
+             mock.patch("za_cli.cli.Database") as database, \
+             mock.patch("za_cli.cli._semantic_index") as semantic_index, \
+             mock.patch("za_cli.cli._index_queue") as queue, \
+             mock.patch("za_cli.cli.shutil.which", return_value="/usr/bin/tool"):
+            bridge.return_value.health.return_value = {
+                "ok": True,
+                "protocol": 1,
+                "extension_version": "0.5.1",
+            }
+            database.return_value.schema_check.return_value = {"ok": True}
+            semantic_index.return_value.status.return_value = {"initialized": True}
+            queue.return_value.status.return_value = {
+                "worker_running": False,
+                "refreshing": False,
+                "pending_items": 2,
+            }
+            result = CliRunner().invoke(cli, ["--json", "app", "doctor"])
+
+        self.assertEqual(result.exit_code, 1, result.output)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["code"], "DEGRADED")
+        self.assertFalse(payload["data"]["ready"])
+        self.assertFalse(payload["data"]["checks"]["index"]["maintenance"]["ok"])
+        self.assertEqual(payload["data"]["checks"]["index"]["queue"]["pending_items"], 2)
 
     def test_json_success_envelope(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(
