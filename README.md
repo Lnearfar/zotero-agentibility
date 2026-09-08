@@ -305,6 +305,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.6.1
+
+- Read committed SQLite WAL changes for worker watermark discovery, preventing newly added Items from being skipped before a checkpoint.
+
 ### v0.6.0
 
 - Retired per-agent browsing Sessions and their hidden current-Collection state.

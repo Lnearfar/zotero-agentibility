@@ -104,6 +104,18 @@ class DatabaseTests(unittest.TestCase):
             [],
         )
 
+    def test_modified_literature_keys_reads_uncheckpointed_wal_changes(self):
+        writer = sqlite3.connect(self.path)
+        self.addCleanup(writer.close)
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        writer.execute("UPDATE items SET dateModified='2026-08-20 10:00:01' WHERE key='ITEMONE1'")
+        writer.commit()
+        self.assertEqual(
+            self.db.modified_literature_keys("2026-08-20 10:00:00", "2026-08-20 10:00:02"),
+            ["ITEMONE1"],
+        )
+
     def test_index_inventory_returns_scoped_parent_and_attachment_revisions(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("UPDATE items SET dateModified='parent-v1' WHERE key='ITEMONE1'")

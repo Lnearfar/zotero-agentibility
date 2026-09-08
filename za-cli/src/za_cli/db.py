@@ -62,6 +62,16 @@ def connect_immutable(path: Path) -> sqlite3.Connection:
     return connection
 
 
+def connect_current(path: Path) -> sqlite3.Connection:
+    path = path.expanduser().resolve()
+    if not path.is_file():
+        raise CliError("DATABASE_NOT_FOUND", f"Zotero database not found: {path}")
+    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=1)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only=ON")
+    return connection
+
+
 class Database:
     def __init__(self, path: Path):
         self.path = path
@@ -285,7 +295,7 @@ class Database:
         return attachments
 
     def modified_literature_keys(self, since: str, until: str) -> list[str]:
-        with closing(connect_immutable(self.path)) as conn:
+        with closing(connect_current(self.path)) as conn:
             rows = conn.execute(
                 """SELECT DISTINCT parent.key,parent.itemID
                    FROM items changed
