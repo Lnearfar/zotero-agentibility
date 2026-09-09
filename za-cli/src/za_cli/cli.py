@@ -97,7 +97,24 @@ class RootGroup(click.Group):
 @click.version_option(__version__, prog_name="za-cli")
 @click.pass_context
 def cli(ctx: click.Context, json_output: bool) -> None:
-    """Local Zotero retrieval, document intake, and confirmed writes."""
+    """Local Zotero retrieval, document intake, and confirmed writes.
+
+    Installed command help is the command reference. Use COMMAND --help, then
+    COMMAND SUBCOMMAND --help for grouped operations. Unsupported operations
+    are not implied by roadmap documentation.
+
+    Put --json before the command for machine-readable output. Responses carry
+    ok, code, and data or error; a nonzero exit does not necessarily mean a write
+    was rolled back. read --all emits raw text even with --json.
+
+    Writes require --confirm and operate in My Library through the running
+    Zotero Extension. Omitting --confirm returns CONFIRMATION_REQUIRED, not a
+    preview or dry run. WRITE_OUTCOME_UNKNOWN means inspect Zotero before any
+    retry; an audit or index warning may follow an already committed write.
+
+    Start retrieval directly; doctor and index maintenance are not prerequisites.
+    search reads the semantic index; ls and lookup do not depend on that index.
+    """
     ctx.ensure_object(dict)
     ctx.obj["config"] = build_config(json_output)
 
@@ -232,10 +249,20 @@ def app_status(ctx: click.Context) -> None:
         ctx.exit(1)
 
 
-@app_group.command("doctor", help="Check Zotero, Extension, token, database, and Poppler.")
+@app_group.command("doctor")
 @click.option("--deep", is_flag=True, help="Also reconcile cached index statistics by scanning Passage metadata.")
 @click.pass_context
 def app_doctor(ctx: click.Context, deep: bool) -> None:
+    """Check connectivity, dependencies, and background index maintenance.
+
+    Checks Zotero, Extension protocol, token, database, Poppler, cached index
+    status, and worker heartbeat/errors. DEGRADED exits nonzero; inspect the
+    individual checks rather than assuming the library is unavailable.
+
+    Use after a failure, not before ordinary retrieval. --deep scans Passage
+    metadata and persists reconciled statistics; it can be slow and does not
+    refresh document contents or start the worker.
+    """
     config = _config(ctx)
     app = probes(config.port)
     token = token_status(config.config_dir / "bridge-token")
@@ -287,13 +314,21 @@ def app_doctor(ctx: click.Context, deep: bool) -> None:
         ctx.exit(1)
 
 
-@cli.command("ls", help="List child Collections and Literature Items.")
+@cli.command("ls")
 @click.argument("target", required=False)
 @click.option("--collection", "collection_key", help="List a Collection by stable key.")
 @click.option("--offset", default=0, show_default=True, type=int, help="Skip this many entries.")
 @click.option("--limit", default=50, show_default=True, type=int, help="Maximum entries to return.")
 @click.pass_context
 def ls_command(ctx: click.Context, target: str | None, collection_key: str | None, offset: int, limit: int) -> None:
+    """List child Collections and Literature Items.
+
+    Defaults to My Library. TARGET is a Collection path; --collection accepts
+    a stable Collection Key instead. Do not supply both. This lists immediate
+    entries, not recursive search results, and does not require a semantic index.
+
+    Example: za-cli --json ls --collection COLLECTION_KEY --limit 20
+    """
     if target and collection_key:
         raise CliError("INVALID_ARGUMENT", "Use a collection path or --collection, not both")
     db = _database(ctx)
@@ -317,21 +352,46 @@ def lookup(ctx: click.Context, item_key: str) -> None:
     emit(ctx, _database(ctx).lookup(item_key))
 
 
-@cli.command("source", help="Show the selected Markdown Full Text or fallback document.")
+@cli.command("source")
 @click.argument("item_key")
 @click.pass_context
 def source_command(ctx: click.Context, item_key: str) -> None:
+    """Show the selected Markdown Full Text or fallback document.
+
+    Selection order: one canonical child tagged za-cli:md, one PDF tagged
+    za-cli:pdf, or a sole PDF/EPUB. Canonical Markdown must be stored as
+    fulltext.md with title 'Markdown Full Text'; it remains preferred even
+    after PDF changes. Invalid or multiple marked sources are errors, not
+    reasons to silently choose another attachment.
+
+    Reports the attachment key, path, format, and file existence without
+    indexing. A sole EPUB can be reported, but read/find cannot extract it.
+    Notes, Annotations, and unmarked Markdown are not canonical Full Text.
+    """
     config = _config(ctx)
     emit(ctx, sources.resolve_for_item(_database(ctx), item_key, config.data_dir))
 
 
-@cli.command("read", help="Read bounded lines from the selected Markdown or PDF source.")
+@cli.command("read")
 @click.argument("item_key")
 @click.option("--start", default=1, show_default=True, type=int, help="First source line to read.")
 @click.option("--limit", default=200, show_default=True, type=int, help="Maximum source lines to read.")
 @click.option("--all", "all_text", is_flag=True, help="Emit untruncated raw full text.")
 @click.pass_context
 def read_command(ctx: click.Context, item_key: str, start: int, limit: int, all_text: bool) -> None:
+    """Read bounded lines from the selected Markdown or PDF source.
+
+    Uses the selection rules in source --help, without the semantic index.
+    --start is a 1-based line number, not a PDF page number. JSON includes
+    source identity, content, location, and nextStart for continuation.
+    PDF extraction requires Poppler; scanned documents may require external
+    OCR. EPUB returns UNSUPPORTED_SOURCE_FORMAT.
+
+    --all ignores line bounds and writes raw full text, even with --json.
+    The calling tool may still truncate that output. Prefer bounded reads.
+
+    Example: za-cli --json read ITEM_KEY --start 1 --limit 40
+    """
     config = _config(ctx)
     source = sources.resolve_for_item(_database(ctx), item_key, config.data_dir)
     result = sources.read_source(source, start=start, limit=limit, all_text=all_text)
@@ -345,13 +405,22 @@ def read_command(ctx: click.Context, item_key: str, start: int, limit: int, all_
         click.echo(f"\n[{item_key}, {result['attachmentKey']}, {result['location']}]", err=True)
 
 
-@cli.command("find", help="Find exact text in the selected Markdown or PDF source.")
+@cli.command("find")
 @click.argument("item_key")
 @click.argument("query")
 @click.option("--context", default=0, show_default=True, type=int, help="Surrounding lines per match.")
 @click.option("--limit", default=20, show_default=True, type=int, help="Maximum matches to return.")
 @click.pass_context
 def find_command(ctx: click.Context, item_key: str, query: str, context: int, limit: int) -> None:
+    """Find literal text in the selected Markdown or PDF source.
+
+    Case-insensitive substring matching within individual lines, not regex or
+    semantic search. Uses source selection without an index; EPUB is unsupported.
+    Returns matching lines and source locations, including PDF page numbers.
+    --limit bounds returned matches, not the amount of source text scanned.
+
+    Example: za-cli --json find ITEM_KEY "exact phrase" --context 3
+    """
     config = _config(ctx)
     source = sources.resolve_for_item(_database(ctx), item_key, config.data_dir)
     emit(ctx, sources.lexical_find(source, query, limit=limit, context=context))
@@ -359,10 +428,20 @@ def find_command(ctx: click.Context, item_key: str, query: str, context: int, li
 
 @cli.group("index")
 def index_group() -> None:
-    """Update and inspect the local semantic Passage index."""
+    """Update and inspect the local semantic Passage index.
+
+    The Zotero Extension owns automatic indexing: it starts/stops the worker,
+    queues changed Items, and schedules reconciliation. Agentibility Console
+    shows lifecycle, queue, errors, and selected-Item coverage.
+
+    Ordinary retrieval should not wait for maintenance. Use status to diagnose
+    missing recent results, refresh to enqueue known Items, and update only
+    when synchronous maintenance is explicitly needed. Do not launch a second
+    worker or restore a separate systemd supervisor.
+    """
 
 
-@index_group.command("update", help="Explicitly update changed semantic Passages.")
+@index_group.command("update")
 @click.option("--force", is_flag=True, help="Rebuild selected records even when unchanged.")
 @click.option("--item", "item_keys", multiple=True, help="Update only this Literature Item; repeatable.")
 @click.option("--collection", help="Update only an explicit Collection path and descendants.")
@@ -370,6 +449,17 @@ def index_group() -> None:
 def index_update(
     ctx: click.Context, force: bool, item_keys: tuple[str, ...], collection: str | None
 ) -> None:
+    """Synchronously update changed semantic Passages.
+
+    With no scope, updates the full library and initializes a missing index.
+    Use repeatable --item keys or --collection PATH (including descendants),
+    not both. Requires the running Extension's native catalog. Unchanged
+    sources are skipped unless --force is given.
+
+    Waits for extraction and embedding. INDEX_PARTIAL exits nonzero and reports
+    per-item errors; successful Items remain indexed. Does not acknowledge
+    existing refresh queue events. Prefer index refresh for asynchronous work.
+    """
     if item_keys and collection:
         raise CliError("INVALID_ARGUMENT", "Use --collection or --item, not both")
     config = _config(ctx)
@@ -383,9 +473,17 @@ def index_update(
         ctx.exit(1)
 
 
-@index_group.command("reconcile", help="Reconcile the full library and emit a compact maintenance report.")
+@index_group.command("reconcile")
 @click.pass_context
 def index_reconcile(ctx: click.Context) -> None:
+    """Reconcile the full library and emit a compact maintenance report.
+
+    Synchronously updates changed sources and removes obsolete index records.
+    Per-item coverage errors are summarized by code: INDEX_PARTIAL with ok=true
+    and exit 0 means maintenance completed with incomplete coverage. Command
+    failures still exit nonzero. Unlike index update, partial coverage alone
+    is not a failed command. Automatic reconciliation belongs to the worker.
+    """
     config = _config(ctx)
     report = _semantic_index(ctx).update(_index_catalog(ctx), config.data_dir)
     counts: dict[str, int] = {}
@@ -397,24 +495,42 @@ def index_reconcile(ctx: click.Context) -> None:
     emit(ctx, result, code="OK" if not counts else "INDEX_PARTIAL")
 
 
-@index_group.command("status", help="Show semantic index readiness, cached coverage, and refresh queue.")
+@index_group.command("status")
 @click.option("--deep", is_flag=True, help="Reconcile cached statistics by scanning Passage metadata.")
 @click.pass_context
 def index_status(ctx: click.Context, deep: bool) -> None:
+    """Show semantic index readiness, cached coverage, and refresh queue.
+
+    Reads persisted statistics by default, without scanning Passage metadata.
+    --deep scans and persists reconciled statistics; it does not re-extract
+    sources. A running idle worker is not actively refreshing. Queued Items
+    are not necessarily indexed yet; inspect item errors and Console status.
+    """
     result = _semantic_index(ctx).status(deep=True) if deep else _semantic_index(ctx).status()
     result["queue"] = _index_queue(ctx).status()
     emit(ctx, result)
 
 
-@index_group.command("refresh", help="Queue selected Literature Items for background indexing.")
+@index_group.command("refresh")
 @click.option("--item", "item_keys", multiple=True, required=True, help="Literature Item to refresh; repeatable.")
 @click.pass_context
 def index_refresh(ctx: click.Context, item_keys: tuple[str, ...]) -> None:
+    """Queue selected Literature Items for background indexing.
+
+    Durably enqueues repeatable parent Item Keys and returns immediately.
+    Success means queued, not indexed; it neither starts a worker nor waits
+    for embedding. The Extension-owned worker processes the queue.
+
+    Use for explicit freshness or to retry INDEX_UPDATE_FAILED_AFTER_WRITE
+    without repeating an already committed Zotero write.
+
+    Example: za-cli --json index refresh --item ITEM_KEY
+    """
     keys = list(dict.fromkeys(item_keys))
     emit(ctx, _index_queue(ctx).enqueue(keys, reason="explicit-refresh"))
 
 
-@index_group.command("worker", help="Process queued semantic index refreshes.")
+@index_group.command("worker")
 @click.option("--managed", is_flag=True, help="Run the extension-owned managed stdin runtime.")
 @click.option("--data-dir", type=click.Path(path_type=Path), help="Zotero data directory supplied by the Extension.")
 @click.option("--port", type=click.IntRange(1, 65535), help="Live Zotero HTTP port supplied by the Extension.")
@@ -428,6 +544,16 @@ def index_refresh(ctx: click.Context, item_keys: tuple[str, ...]) -> None:
 def index_worker(ctx: click.Context, managed: bool, once: bool, poll_seconds: float,
                  data_dir: Path | None, port: int | None, config_dir: Path | None,
                  retry_seconds: float | None, reconcile_seconds: float | None) -> None:
+    """Process queued semantic index refreshes.
+
+    Internal lifecycle command, normally started by the Zotero Extension.
+    --managed uses NDJSON stdin/stdout and requires runtime settings supplied
+    by the Extension, including retry and reconciliation intervals.
+
+    --once processes one bounded batch for manual diagnostics when no worker
+    is running. Failed Items remain queued; INDEX_PARTIAL exits nonzero.
+    --managed and --once are mutually exclusive; one is required.
+    """
     if managed and once:
         raise CliError("INVALID_ARGUMENT", "Use --managed or --once")
     if not managed and not once:
@@ -455,7 +581,7 @@ def index_worker(ctx: click.Context, managed: bool, once: bool, poll_seconds: fl
                       retry_seconds=retry_seconds, reconcile_seconds=reconcile_seconds)
 
 
-@index_group.command("inspect", help="Inspect indexed Passage metadata.")
+@index_group.command("inspect")
 @click.option("--limit", default=20, show_default=True, type=int, help="Maximum records to return.")
 @click.option("--filter", "filter_text", help="Case-insensitive title or creator substring.")
 @click.option("--documents", "show_documents", is_flag=True, help="Include stored Passage text.")
@@ -464,12 +590,18 @@ def index_worker(ctx: click.Context, managed: bool, once: bool, poll_seconds: fl
 def index_inspect(
     ctx: click.Context, limit: int, filter_text: str | None, show_documents: bool, stats: bool
 ) -> None:
+    """Inspect indexed Passage metadata.
+
+    Diagnostic view of the semantic index, not the Zotero catalog. Unlike quick
+    index status, this scans stored records; --limit bounds displayed records.
+    --documents includes indexed text, which may lag behind source changes.
+    """
     emit(ctx, _semantic_index(ctx).inspect(
         limit=limit, filter_text=filter_text, show_documents=show_documents, stats=stats
     ))
 
 
-@cli.command("search", help="Search indexed Passages by semantic similarity.")
+@cli.command("search")
 @click.argument("query")
 @click.option("--limit", default=10, show_default=True, type=int, help="Maximum Literature Items or Passages.")
 @click.option("--collection", help="Recursively scope to an explicit Collection path.")
@@ -484,6 +616,26 @@ def search_command(
     item_key: str | None,
     filters: str | None,
 ) -> None:
+    """Search indexed Passages by semantic similarity.
+
+    Searches PDF/Markdown contents, not catalog titles or metadata-only Items.
+    Defaults to the library index and one best Passage per matching Item;
+    --item returns multiple Passages within one Item. --collection takes a
+    recursive Collection path and cannot be combined with --item.
+    --filters accepts a Chroma metadata JSON object, for example
+    '{"item_type":"journalArticle"}'.
+
+    Reads the existing index without refreshing it. Returned index freshness
+    describes potentially stale results; no hit does not prove an Item is
+    absent from Zotero. Use ls/lookup for catalog inspection and read/find to
+    verify source passages before citing them.
+
+    On INDEX_UNINITIALIZED, inspect index status and the Extension Console;
+    index update can explicitly initialize it. For known changed Items use
+    index refresh --item KEY rather than blocking on a full-library update.
+
+    Example: za-cli --json search "stability proof" --limit 5
+    """
     if collection and item_key:
         raise CliError("INVALID_ARGUMENT", "Use --collection or --item, not both")
     parsed_filters = None
@@ -522,9 +674,9 @@ def add_group() -> None:
     """Add local PDF and EPUB documents through Zotero."""
 
 
-@add_group.command("file", help="Add one local PDF or EPUB document.")
+@add_group.command("file")
 @click.argument("path", type=click.Path(path_type=Path))
-@click.option("--collection", "collection_key", help="Add the new item to this Collection Key.")
+@click.option("--collection", "collection_key", help="Add the imported or reused item to this Collection Key.")
 @click.option("--parent", "parent_item_key", help="Attach to this existing Literature Item Key without recognition.")
 @click.option("--confirm", is_flag=True, help="Confirm the recoverable Zotero mutation.")
 @click.pass_context
@@ -535,6 +687,31 @@ def add_file(
     parent_item_key: str | None,
     confirm: bool,
 ) -> None:
+    """Add one local PDF or EPUB document.
+
+    Copies a regular, non-symlink local file into Zotero storage, preserving
+    the original. File contents must match the PDF/EPUB extension. My Library
+    only; no URL download. Native metadata recognition runs unless --parent
+    explicitly supplies an existing Literature Item.
+
+    Without --collection, newly created Items are Unfiled; existing membership
+    of a reused or explicit parent is preserved. --collection adds membership
+    rather than moving the Item out of other Collections.
+
+    Outcomes: added, added_unrecognized (successful standalone import, no
+    parent), or reused (identical stored source). Use returned attachment_key
+    and parent_item_key, not guessed metadata. Ambiguous identity or a Strong
+    Identifier with a different existing source is a conflict; different PDFs
+    are not automatically replaced, and fuzzy matches are not merged.
+
+    Parent changes queue indexing without waiting for embedding. An index
+    warning after commit must not trigger another import; retry index refresh
+    for the returned parent key. WRITE_OUTCOME_UNKNOWN or ROLLBACK_FAILED
+    requires inspecting the reported Zotero Items before retrying.
+
+    Requires --confirm; omitting it is not a preview.
+    Example: za-cli --json add file /path/to/paper.pdf --confirm
+    """
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to add a local document")
     config = _config(ctx)
@@ -552,7 +729,7 @@ def add_file(
     )
 
 
-@cli.command("resolve", help="Create a verified parent item for a standalone PDF or EPUB.")
+@cli.command("resolve")
 @click.argument("attachment_key")
 @click.option("--markdown", "markdown_path", type=click.Path(path_type=Path), help="Reviewed Markdown fallback for identifier lookup.")
 @click.option("--confirm", is_flag=True, help="Confirm the recoverable Zotero mutation.")
@@ -563,6 +740,23 @@ def metadata_resolve(
     markdown_path: Path | None,
     confirm: bool,
 ) -> None:
+    """Create a verified parent item for a standalone PDF or EPUB.
+
+    ATTACHMENT_KEY identifies an existing parentless document in My Library,
+    not a local file or a Literature Item. Invokes Zotero's native recognizer.
+    --markdown supplies reviewed local Markdown for identifier-based metadata
+    lookup only if native recognition fails; it does not import Full Text.
+    The fallback requires an unambiguous Strong Identifier and matching title.
+
+    On success, use returned parent_item_key for subsequent fulltext import.
+    METADATA_UNRESOLVED is not permission to invent metadata or a title-only
+    parent. Recognition may contact external metadata services.
+
+    Requires --confirm, not a dry run. A committed audit warning is not a
+    rollback; inspect unknown write outcomes before retrying.
+
+    Example: za-cli --json resolve ATTACHMENT_KEY --confirm
+    """
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to resolve document metadata")
     config = _config(ctx)
@@ -593,13 +787,42 @@ def metadata_resolve(
 
 @cli.group("fulltext")
 def fulltext_group() -> None:
-    """Audit, import, and safely adopt canonical Markdown Full Text."""
+    """Audit, import, and safely adopt canonical Markdown Full Text.
+
+    Canonical Full Text is a stored child named fulltext.md, titled
+    'Markdown Full Text', and tagged za-cli:md. It takes precedence over PDFs
+    for reading and semantic indexing. Notes and derived summaries are not
+    Full Text. PDF/OCR conversion and review happen outside this CLI.
+
+    import copies a local Markdown file; adopt copies an existing child
+    attachment and trashes its old attachment; audit/migrate handle reviewed
+    batches. Writes require --confirm and never permanently purge attachments.
+    Successful changes queue indexing without waiting for embedding.
+
+    INDEX_UPDATE_FAILED_AFTER_WRITE means the Zotero write committed: retry
+    index refresh --item KEY, not the write. An audit failure after write also
+    means committed. On WRITE_OUTCOME_UNKNOWN or ROLLBACK_FAILED, inspect
+    reported Items and any orphan attachment before attempting another write.
+    """
 
 
-@fulltext_group.command("audit", help="Create a read-only Markdown migration plan.")
+@fulltext_group.command("audit")
 @click.option("--output", type=click.Path(path_type=Path), help="Write the compact read-only manifest.")
 @click.pass_context
 def fulltext_audit(ctx: click.Context, output: Path | None) -> None:
+    """Create a read-only Markdown migration plan.
+
+    Audits existing attachments without changing Zotero. Emits the manifest,
+    or writes it to --output and returns a summary. Entries are classified as
+    canonical, candidate, unresolved, or excluded. Missing/ambiguous sources
+    need review; distill.md and probe_distill.md are excluded.
+
+    Review candidate decisions and exclusions before fulltext migrate. Only
+    entries whose candidateClass is 'candidate' are applied, with at most one
+    selected attachment per parent. Do not invent missing paths or identities.
+
+    Example: za-cli --json fulltext audit --output migration-plan.json
+    """
     config = _config(ctx)
     manifest = sources.fulltext_manifest(_database(ctx), config.data_dir)
     if output:
@@ -609,7 +832,7 @@ def fulltext_audit(ctx: click.Context, output: Path | None) -> None:
         emit(ctx, manifest)
 
 
-@fulltext_group.command("adopt", help="Copy one Markdown attachment into canonical Full Text.")
+@fulltext_group.command("adopt")
 @click.argument("item_key")
 @click.argument("markdown_attachment_key")
 @click.option("--replace", "replace_keys", multiple=True, help="Explicit marked Full Text attachment to replace.")
@@ -622,6 +845,23 @@ def fulltext_adopt(
     replace_keys: tuple[str, ...],
     confirm: bool,
 ) -> None:
+    """Copy one Markdown attachment into canonical Full Text.
+
+    MARKDOWN_ATTACHMENT_KEY must be an existing Markdown child of ITEM_KEY,
+    with an accessible non-symlink file, not distill.md or probe_distill.md.
+    Stores a canonical fulltext.md child, then moves the adopted attachment
+    and explicitly replaced Full Text attachments to Zotero Trash.
+
+    Supply every other child tagged za-cli:md using repeatable --replace.
+    FULLTEXT_CONFLICT reports requiredAttachmentKeys; inspect them and obtain
+    approval for replacement. Unrelated Markdown attachments are preserved.
+    This is not a PDF conversion or a tag-only operation.
+
+    Requires --confirm; no dry run. Indexing is queued after commit; see
+    fulltext --help for committed warnings and unknown-outcome retry rules.
+
+    Example: za-cli --json fulltext adopt ITEM_KEY ATTACHMENT_KEY --confirm
+    """
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to adopt Markdown Full Text")
     config = _config(ctx)
@@ -641,7 +881,7 @@ def fulltext_adopt(
     )
 
 
-@fulltext_group.command("import", help="Import one local Markdown file as canonical Full Text.")
+@fulltext_group.command("import")
 @click.argument("item_key")
 @click.argument("markdown_path", type=click.Path(path_type=Path))
 @click.option("--replace", "replace_keys", multiple=True, help="Explicit marked Full Text attachment to replace.")
@@ -654,6 +894,24 @@ def fulltext_import(
     replace_keys: tuple[str, ...],
     confirm: bool,
 ) -> None:
+    """Import one local Markdown file as canonical Full Text.
+
+    ITEM_KEY is an existing Literature Item. MARKDOWN_PATH must be a regular
+    non-symlink .md file, not distill.md or probe_distill.md. Copies it into
+    Zotero as fulltext.md while preserving the local original. Conversion and
+    review against the PDF are external; referenced image assets are not
+    imported, so consult the PDF when figures matter.
+
+    Supply all existing children tagged za-cli:md using repeatable --replace.
+    FULLTEXT_CONFLICT reports requiredAttachmentKeys; inspect and approve
+    them before replacement. Replaced attachments go to Trash; unrelated
+    Markdown is preserved.
+
+    Requires --confirm; no dry run. Indexing is queued after commit; see
+    fulltext --help for committed warnings and unknown-outcome retry rules.
+
+    Example: za-cli --json fulltext import ITEM_KEY /path/to/fulltext.md --confirm
+    """
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to import Markdown Full Text")
     config = _config(ctx)
@@ -670,11 +928,32 @@ def fulltext_import(
     )
 
 
-@fulltext_group.command("migrate", help="Apply reviewed candidate entries from a migration plan.")
+@fulltext_group.command("migrate")
 @click.argument("plan", type=click.Path(path_type=Path))
 @click.option("--confirm", is_flag=True, help="Confirm all selected recoverable Zotero mutations.")
 @click.pass_context
 def fulltext_migrate(ctx: click.Context, plan: Path, confirm: bool) -> None:
+    """Apply reviewed candidate entries from a migration plan.
+
+    PLAN is the JSON manifest from fulltext audit. Review its decisions and
+    obtain approval before --confirm. Only candidateClass='candidate' entries
+    are selected, at most one per parent. Keys, paths, file identity, and
+    replacement selections are revalidated; stale plans require a new audit.
+    Uses fulltext adopt semantics, including trashing adopted/replaced
+    attachments and queueing indexing. No preview is provided by omitting
+    --confirm.
+
+    The batch is not atomic. Ordinary per-item failures allow later entries
+    to continue; unknown write outcomes and rollback failures stop the batch.
+    Output reports attempted, succeeded, failed, warnings, skipped, and per-item
+    results. Partial failures and committed warnings exit nonzero.
+
+    Do not replay the entire plan after an error. Inspect successes, unknown
+    outcomes, and any orphanAttachmentKey first. Retry only index refresh for
+    committed index warnings; audit/review remaining writes again.
+
+    Example: za-cli --json fulltext migrate migration-plan.json --confirm
+    """
     if not confirm:
         raise CliError("CONFIRMATION_REQUIRED", "Pass --confirm to apply a reviewed migration plan")
     config = _config(ctx)
