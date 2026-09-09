@@ -59,10 +59,10 @@ async function testRuntime() {
   httpPort: 23119, configDirectory: "/home/test/.config/zotero-agentibility" });
   await runtime.start();
   await new Promise(resolve => setTimeout(resolve, 0));
-  const body = { textContent: "" };
+  const body = { textContent: "", style: {} };
   section.onRender({ body, item: parent });
-  assert.match(body.textContent, /Worker: idle/);
-  assert.match(body.textContent, /Selected passages: 4/);
+  assert.match(body.textContent, /Library worker: idle/);
+  assert.match(body.textContent, /Searchable: Source · 4 passages/);
   child.parentItemID = null;
   await observer.notify("delete", "item", [2]);
   await new Promise(resolve => setTimeout(resolve, 80));

@@ -239,26 +239,40 @@ var AgentibilityRuntime = (function () {
 
     function render(props) {
       var item = props.item;
-      var itemKey = item && item.isRegularItem && item.isRegularItem() ? item.key : null;
+      var itemKey = item && item.isRegularItem && item.isRegularItem() ? item.key
+        : item ? parentKeys[item.id] : null;
       var stats = state.item_stats && itemKey ? state.item_stats[itemKey] : null;
       var error = state.errors && itemKey ? state.errors[itemKey] : null;
-      var selected = (state.active_item_keys || []).includes(itemKey) ? "Indexing"
+      var indexed = stats && stats.passages > 0;
+      var source = stats && stats.source_kind === "markdown" ? "MD"
+        : stats && stats.source_kind === "pdf" ? "PDF" : "Source";
+      var active = (state.active_item_keys || []).includes(itemKey);
+      var queued = (state.pending_keys || []).includes(itemKey);
+      var selected = !itemKey ? "Select a literature item" : active ? "Indexing"
         : error ? (["SOURCE_NOT_FOUND", "SOURCE_MISSING"].includes(error.code) ? "Source missing" : "Failed")
-          : (state.pending_keys || []).includes(itemKey) ? "Queued" : stats ? "Indexed" : "Not indexed";
+          : queued ? "Queued" : indexed ? source + " indexed" : "Not indexed";
       var lines = [
-        "Agentibility Console",
-        "Worker: " + (state.phase || "unknown"),
-        "Heartbeat: " + (state.heartbeat || "unknown"),
-        "Queue: " + (state.pending_items || 0),
-        "Active: " + ((state.active_item_keys || []).join(", ") || "none"),
-        "Errors: " + Object.keys(state.errors || {}).length,
-        "Index: " + (state.item_count || 0) + " items / " + (state.count || 0) + " passages",
-        "Last update: " + (state.last_updated || "none"),
-        "Selected: " + selected,
-        "Selected passages: " + (stats && stats.passages !== undefined ? stats.passages : "unknown")
+        "This item: " + (itemKey || "—"),
+        "Search status: " + selected,
+        indexed ? "Searchable: " + source + " · " + stats.passages + " passages" : "Searchable: no indexed passages yet"
       ];
-      if (error) lines.push("Selected error: " + (error.message || error.code || "unknown"));
-      if (state.last_error) lines.push("Fault: " + (state.last_error.message || state.last_error));
+      if (indexed && stats.partial) lines.push("Coverage: partial");
+      if (indexed && (queued || active || error)) lines.push("Previously indexed content remains searchable.");
+      if (error) lines.push("Item error: " + error.code + " — " + error.message);
+      if (queued) lines.push(error ? "Retry: queued" : "Refresh: queued");
+      if (source === "MD" && indexed) lines.push("Markdown is indexed instead of PDF.");
+      var errors = Object.keys(state.errors || {});
+      lines.push("", "Library worker: " + (state.phase || "unknown"),
+        "Library queue: " + (state.pending_items || 0),
+        "Library errors: " + errors.length,
+        "Library index: " + (state.item_count || 0) + " items / " + (state.count || 0) + " passages",
+        "Heartbeat: " + (state.heartbeat ? new Date(state.heartbeat).toLocaleTimeString() : "unknown"),
+        "Last pass: " + (state.last_updated ? new Date(state.last_updated).toLocaleTimeString() : "none"));
+      errors.slice(0, 5).forEach(function (key) { lines.push(key + ": " + state.errors[key].code); });
+      if (errors.length > 5) lines.push("… " + (errors.length - 5) + " more library errors");
+      if (state.last_error) lines.push("Worker fault: " + (state.last_error.message || state.last_error));
+      props.body.style.whiteSpace = "pre-wrap";
+      props.body.style.lineHeight = "1.6";
       props.body.textContent = lines.join("\n");
     }
 
