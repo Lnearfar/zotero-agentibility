@@ -1897,10 +1897,13 @@ async function _startWorkerRuntime(rootURI) {
   if (!extensionRunning) return;
   Services.scriptloader.loadSubScript(uri + "runtime.js", this);
   var subprocess = ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs").Subprocess;
+  var configChannel = ChromeUtils.importESModule("resource://gre/modules/NetUtil.sys.mjs").NetUtil.newChannel({
+    uri: uri + "index-runtime.json", loadUsingSystemPrincipal: true
+  });
   agentibilityRuntime = AgentibilityRuntime.create({
     Zotero: Zotero,
     resourceURI: uri,
-    settings: JSON.parse(await Zotero.File.getContentsAsync(uri + "index-runtime.json")),
+    settings: JSON.parse(await Zotero.File.getContentsAsync(configChannel)),
     Subprocess: subprocess,
     executable: _workerExecutable(),
     dataDirectory: Zotero.DataDirectory.dir,

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotero-Agentibility Bridge",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Modified from cli-anything-zotero: authenticated fixed-operation bridge for zotero-agentibility",
   "applications": {
     "zotero": {

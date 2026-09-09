@@ -83,6 +83,8 @@ There is no npm test framework in this scaffold integration. Run native acceptan
 
 ## Native acceptance record
 
+The 0.7.1 fix was also verified by installing the built XPI through RDP in isolated Zotero, confirming its resource URI starts with `jar:`, Console registration, exactly one worker, and no orphan on exit. Unpacked Scaffold acceptance alone does not validate packaged resources. Read bundled configuration via `NetUtil.newChannel()` and `Zotero.File.getContentsAsync(channel)`; passing a `jar:` string routes through Zotero HTTP, which fails on URI username handling.
+
 Verified on the installed Linux/Zotero 10 runtime using only `.scaffold/` state:
 
 - RDP temporary installation without a manually installed XPI.

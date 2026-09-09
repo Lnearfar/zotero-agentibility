@@ -315,6 +315,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.7.1
+
+Fix Console and worker startup in installed XPIs by reading bundled configuration through a native file channel. Verified packed `jar:` loading, Console registration, a single worker, and clean shutdown in isolated Zotero.
+
 ### v0.7.0
 
 The Extension owns worker startup, shutdown, and native change notifications. The Agentibility Console shows indexing state in the Item pane. Indexing uses authenticated native catalog reads and in-process scheduling for reconciliation. The standalone supervisor and SQLite watermark path are retired.
