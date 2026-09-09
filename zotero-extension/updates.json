@@ -3,9 +3,9 @@
     "zotero-agentibility@local": {
       "updates": [
         {
-          "version": "0.7.3",
-          "update_link": "https://github.com/Lnearfar/zotero-agentibility/releases/download/v0.7.3/zotero-agentibility-0.7.3.xpi",
-          "update_hash": "sha256:b006ee252b7e10e7f633f0d17718e49add8f04aa9d59ec940a69a8998d8acf0d",
+          "version": "0.7.4",
+          "update_link": "https://github.com/Lnearfar/zotero-agentibility/releases/download/v0.7.4/zotero-agentibility-0.7.4.xpi",
+          "update_hash": "sha256:4cdf5ba533514690a32e5bfd0a217688057925e297165ae6dc0ccf3863bb31db",
           "applications": {
             "zotero": {
               "strict_min_version": "7.0",

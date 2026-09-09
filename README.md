@@ -315,6 +315,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.7.4
+
+Keep Console contents visible during heartbeat refresh instead of replacing them with a loading placeholder, avoiding repeated panel collapse and expansion.
+
 ### v0.7.3
 
 Restore the Console's required synchronous `onRender` callback alongside asynchronous queue rendering. Verified actual packed-XPI registration and rendering in isolated Zotero.
