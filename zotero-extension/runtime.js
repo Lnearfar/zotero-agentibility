@@ -260,7 +260,6 @@ var AgentibilityRuntime = (function () {
       if (indexed && (queued || active || error)) lines.push("Previously indexed content remains searchable.");
       if (error) lines.push("Item error: " + error.code + " — " + error.message);
       if (queued) lines.push(error ? "Retry: queued" : "Refresh: queued");
-      if (source === "MD" && indexed) lines.push("Markdown is indexed instead of PDF.");
       var errors = Object.keys(state.errors || {});
       lines.push("", "Library worker: " + (state.phase || "unknown"),
         "Library queue: " + (state.pending_items || 0),
@@ -268,11 +267,15 @@ var AgentibilityRuntime = (function () {
         "Library index: " + (state.item_count || 0) + " items / " + (state.count || 0) + " passages",
         "Heartbeat: " + (state.heartbeat ? new Date(state.heartbeat).toLocaleTimeString() : "unknown"),
         "Last pass: " + (state.last_updated ? new Date(state.last_updated).toLocaleTimeString() : "none"));
-      errors.slice(0, 5).forEach(function (key) { lines.push(key + ": " + state.errors[key].code); });
+      errors.slice(0, 5).forEach(function (key) {
+        var issue = state.errors[key];
+        lines.push("", key + " — " + issue.code, issue.message);
+      });
       if (errors.length > 5) lines.push("… " + (errors.length - 5) + " more library errors");
       if (state.last_error) lines.push("Worker fault: " + (state.last_error.message || state.last_error));
       props.body.style.whiteSpace = "pre-wrap";
       props.body.style.lineHeight = "1.6";
+      props.body.style.userSelect = "text";
       props.body.textContent = lines.join("\n");
     }
 
