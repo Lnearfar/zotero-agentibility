@@ -237,7 +237,7 @@ var AgentibilityRuntime = (function () {
       enqueue(keys);
     }
 
-    function render(props) {
+    async function render(props, state) {
       var item = props.item;
       var itemKey = item && item.isRegularItem && item.isRegularItem() ? item.key
         : item ? parentKeys[item.id] : null;
@@ -267,6 +267,34 @@ var AgentibilityRuntime = (function () {
         "Library index: " + (state.item_count || 0) + " items / " + (state.count || 0) + " passages",
         "Heartbeat: " + (state.heartbeat ? new Date(state.heartbeat).toLocaleTimeString() : "unknown"),
         "Last pass: " + (state.last_updated ? new Date(state.last_updated).toLocaleTimeString() : "none"));
+      var pendingKeys = state.pending_keys || [];
+      lines.push("", "Queued items: " + pendingKeys.length);
+      if (!pendingKeys.length) lines.push("No items awaiting processing or retry.");
+      for (var key of pendingKeys) {
+        var issue = state.errors && state.errors[key];
+        var processing = (state.active_item_keys || []).includes(key);
+        var queuedItem = await Zotero.Items.getByLibraryAndKeyAsync(Zotero.Libraries.userLibraryID, key);
+        if (queuedItem) await queuedItem.loadDataType("itemData");
+        var title = queuedItem ? queuedItem.getField("title") : "Item no longer in library";
+        lines.push("", key + " — " + (title || "Untitled item"),
+          processing ? "Indexing" : issue ? "Waiting to retry" : "Waiting for indexing");
+        if (issue) {
+          lines.push(issue.code + " — " + issue.message);
+          var action = {
+            SOURCE_MISSING: "Open the selected attachment in Zotero; download or relink the missing file.",
+            SOURCE_NOT_FOUND: "Attach a PDF or import canonical Markdown under this item.",
+            AMBIGUOUS_SOURCE: "Choose one PDF by tagging its attachment za-cli:pdf; remove that tag from other PDFs.",
+            MULTIPLE_FULLTEXT: "Keep za-cli:md on only the intended canonical Markdown attachment.",
+            INVALID_FULLTEXT: "Repair or re-import canonical Markdown: stored fulltext.md, title Markdown Full Text, tag za-cli:md.",
+            OCR_REQUIRED: "Use external OCR, review the output, then import it as canonical Markdown.",
+            UNSUPPORTED_SOURCE_FORMAT: "Convert the document to reviewed Markdown and import it as canonical Full Text."
+          }[issue.code];
+          lines.push("Action: " + (action || "Inspect this item and the reported error in Zotero before retrying."));
+        }
+      }
+      if (pendingKeys.length) lines.push("", "Copy an Item Key to locate it. Successful processing removes it from this queue.",
+        "Failed items remain queued for automatic retry; they do not block other papers.");
+      if (errors.length) lines.push("", "Library error details:");
       errors.slice(0, 5).forEach(function (key) {
         var issue = state.errors[key];
         lines.push("", key + " — " + issue.code, issue.message);
@@ -296,7 +324,7 @@ var AgentibilityRuntime = (function () {
           refreshes = refreshes.filter(function (callback) { return callback !== props.body.agentibilityRefresh; });
         },
         onItemChange: function (props) { props.setEnabled(true); },
-        onRender: render
+        onAsyncRender: function (props) { return render(props, state); }
       });
     }
 

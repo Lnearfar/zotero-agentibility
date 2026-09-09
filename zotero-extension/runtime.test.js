@@ -60,7 +60,7 @@ async function testRuntime() {
   await runtime.start();
   await new Promise(resolve => setTimeout(resolve, 0));
   const body = { textContent: "", style: {} };
-  section.onRender({ body, item: parent });
+  await section.onAsyncRender({ body, item: parent });
   assert.match(body.textContent, /Library worker: idle/);
   assert.match(body.textContent, /Searchable: Source · 4 passages/);
   child.parentItemID = null;

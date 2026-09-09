@@ -315,6 +315,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.7.2
+
+The Console lists queued Items with titles, copyable keys, waiting/indexing/retry states, and corrective guidance before library error details. CLI help documents command behavior and outcomes; the research skill now focuses on workflows and operating rules.
+
 ### v0.7.1
 
 Fix Console and worker startup in installed XPIs by reading bundled configuration through a native file channel. Verified packed `jar:` loading, Console registration, a single worker, and clean shutdown in isolated Zotero.
