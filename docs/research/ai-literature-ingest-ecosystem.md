@@ -27,10 +27,10 @@ core 可以联网，但范围更窄：已知 identifier、URL 或结构化 metad
 
 依据 [README.md](../../README.md)、[docs/cli.md](../cli.md)、
 [docs/ingest.md](../ingest.md)、[`skills/research-with-zotero/SKILL.md`](../../skills/research-with-zotero/SKILL.md)
-与 [`skills/research-with-zotero/references/mutations.md`](../../skills/research-with-zotero/references/mutations.md)：
+与已安装的 `za-cli --help` 及各级子命令帮助：
 
 - **当前已实现：** `lookup`、`source`、`read`、`find`、`search`、Collection
-  浏览 Session、索引维护；本地 `add file`；`resolve ATTACHMENT_KEY`；`fulltext audit/adopt/import/migrate`。
+  浏览（显式 Collection Key/path）、索引维护；本地 `add file`；`resolve ATTACHMENT_KEY`；`fulltext audit/adopt/import/migrate`。
 - **当前 PDF 边界：** `add file` 接受 Human/browser Skill 已选择的本地 PDF/EPUB，
   由 Zotero 复制并默认识别；`resolve` 处理已经在 Zotero 中的孤立文档。二者都不下载
   PDF。`fulltext import` 接受审阅过的本地 `.md`，原样复制为 `fulltext.md`。
