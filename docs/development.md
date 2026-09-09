@@ -25,7 +25,7 @@ Scaffold copies the current extension assets into `.scaffold/build/addon/`:
 
 - `manifest.json`, `bootstrap.js`, and `runtime.js`
 - `index-runtime.json`
-- `locale/**`, `LICENSE`, and `UPSTREAM.md`
+- `locale/**`, `icons/*.svg`, `LICENSE`, and `UPSTREAM.md`
 
 `build.makeManifest.enable` is false, so the production `zotero-extension/manifest.json` is copied as-is and is not regenerated. The existing `zotero-extension/check.sh` release path is independent and unchanged. The build writes only ignored `.scaffold/` output.
 

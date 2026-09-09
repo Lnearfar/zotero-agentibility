@@ -22,6 +22,7 @@ export default defineConfig({
       "zotero-extension/bootstrap.js",
       "zotero-extension/runtime.js",
       "zotero-extension/locale/**/*.*",
+      "zotero-extension/icons/*.svg",
       "zotero-extension/LICENSE",
       "zotero-extension/UPSTREAM.md",
       "index-runtime.json",

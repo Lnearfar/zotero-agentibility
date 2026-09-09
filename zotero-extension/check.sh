@@ -159,12 +159,14 @@ node runtime.test.js
 
 mkdir -p "$(dirname -- "$XPI")"
 rm -f "$XPI"
-zip -X -q "$XPI" manifest.json bootstrap.js runtime.js locale/en-US/agentibility.ftl LICENSE UPSTREAM.md
+zip -X -q "$XPI" manifest.json bootstrap.js runtime.js locale/en-US/agentibility.ftl icons/console.svg icons/console-dark.svg LICENSE UPSTREAM.md
 zip -X -j -q "$XPI" ../index-runtime.json
 expected='manifest.json
 bootstrap.js
 runtime.js
 locale/en-US/agentibility.ftl
+icons/console.svg
+icons/console-dark.svg
 LICENSE
 UPSTREAM.md
 index-runtime.json'

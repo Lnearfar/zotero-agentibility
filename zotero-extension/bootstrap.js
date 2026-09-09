@@ -1899,6 +1899,7 @@ async function _startWorkerRuntime(rootURI) {
   var subprocess = ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs").Subprocess;
   agentibilityRuntime = AgentibilityRuntime.create({
     Zotero: Zotero,
+    resourceURI: uri,
     settings: JSON.parse(await Zotero.File.getContentsAsync(uri + "index-runtime.json")),
     Subprocess: subprocess,
     executable: _workerExecutable(),

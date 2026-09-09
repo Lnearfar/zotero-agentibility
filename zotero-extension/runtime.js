@@ -267,8 +267,8 @@ var AgentibilityRuntime = (function () {
       paneID = Zotero.ItemPaneManager.registerSection({
         paneID: "agentibility-console",
         pluginID: "zotero-agentibility@local",
-        header: { l10nID: "agentibility-console-header", icon: "chrome://zotero/skin/16/universal/toolbar-gear.svg" },
-        sidenav: { l10nID: "agentibility-console-sidenav", icon: "chrome://zotero/skin/20/universal/toolbar-gear.svg" },
+        header: { l10nID: "agentibility-console-header", icon: deps.resourceURI + "icons/console.svg", darkIcon: deps.resourceURI + "icons/console-dark.svg" },
+        sidenav: { l10nID: "agentibility-console-sidenav", icon: deps.resourceURI + "icons/console.svg", darkIcon: deps.resourceURI + "icons/console-dark.svg" },
         onInit: function (props) {
           props.doc.l10n.addResourceIds(["agentibility.ftl"]);
           props.body.style.whiteSpace = "pre-wrap";
