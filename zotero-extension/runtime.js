@@ -324,6 +324,7 @@ var AgentibilityRuntime = (function () {
           refreshes = refreshes.filter(function (callback) { return callback !== props.body.agentibilityRefresh; });
         },
         onItemChange: function (props) { props.setEnabled(true); },
+        onRender: function (props) { props.body.textContent = "Loading indexing status…"; },
         onAsyncRender: function (props) { return render(props, state); }
       });
     }

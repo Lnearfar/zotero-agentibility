@@ -315,6 +315,10 @@ Removing project state does not remove Literature Items, PDFs, Markdown attachme
 
 ## Development History
 
+### v0.7.3
+
+Restore the Console's required synchronous `onRender` callback alongside asynchronous queue rendering. Verified actual packed-XPI registration and rendering in isolated Zotero.
+
 ### v0.7.2
 
 The Console lists queued Items with titles, copyable keys, waiting/indexing/retry states, and corrective guidance before library error details. CLI help documents command behavior and outcomes; the research skill now focuses on workflows and operating rules.
