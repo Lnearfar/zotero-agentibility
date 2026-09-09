@@ -91,6 +91,8 @@ Zotero libraries are built around PDFs. Humans read PDFs just fine, but LLM-base
 The current release is Linux-only and supports Zotero 7–10. It requires Python 3.10+, [`uv`](https://docs.astral.sh/uv/), Poppler, `make`, `zip`, and `unzip`.
 
 
+For Extension development, use the [npm hot-reload workflow](docs/development.md) with a separate Zotero profile. The installation instructions below are for normal use.
+
 ### Option 1: Install from the command line
 
 Run these commands from a local checkout of this repository:
@@ -101,14 +103,9 @@ sudo apt install poppler-utils make zip unzip
 # Editable install: bare `za-cli` runs this checkout's source.
 uv tool install --editable --force ./za-cli
 make -C zotero-extension
-mkdir -p "$HOME/.config/systemd/user"
-install -m 0644 systemd/*.service systemd/*.timer "$HOME/.config/systemd/user/"
-systemctl --user daemon-reload
-systemctl --user enable --now zotero-agentibility-index-worker.service \
-  zotero-agentibility-index-reconcile.timer
 ```
 
-For a non-default Zotero profile or port, put `ZOTERO_DATA_DIR=/path/to/Zotero` and/or `ZOTERO_HTTP_PORT=23119` in `~/.config/zotero-agentibility/environment`, then restart the worker. The file is local configuration and must not contain or be committed with bearer tokens.
+The Extension passes Zotero's active data directory and HTTP port to its child worker. For terminal commands against a non-default directory or port, set `ZOTERO_DATA_DIR=/path/to/Zotero` and `ZOTERO_HTTP_PORT=23119` in your shell.
 
 In Zotero, open **Tools → Add-ons → Install Add-on From File**, select
 `zotero-extension/build/zotero-agentibility-*.xpi`, and restart Zotero.
@@ -134,8 +131,7 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 
 - a uv tool: `za-cli`;
 - an Agent Skill: `research-with-zotero`;
-- a Zotero Extension: **Zotero-Agentibility Bridge**;
-- a user-level background index worker and reconciliation timer (first run about 15 minutes after activation, then about every 12 hours, with randomized delay).
+- a Zotero Extension with the **Agentibility Console**, native change notifications, and an indexing child process whose lifetime follows Zotero.
 
 `doctor` checks Zotero, its Local API, Extension protocol compatibility, token permissions, Poppler, the database schema, cached semantic-index state, and whether the background index worker is running. A stopped worker reports `DEGRADED`; `doctor --deep` performs the expensive Passage-statistics reconciliation only for explicit diagnosis.
 
@@ -146,7 +142,6 @@ Install https://github.com/Lnearfar/zotero-agentibility for me.
 | `~/.agents/skills/research-with-zotero/`                            | Runtime Agent instructions                                        |
 | `~/.config/zotero-agentibility/`                                     | Mode-`0600` bridge token and write audit                         |
 | `~/.local/share/zotero-agentibility/index/<profile>/`                | Profile-specific Chroma Passage index and durable refresh queue   |
-| `~/.config/systemd/user/zotero-agentibility-index-*`                 | User-level worker and reconciliation timer                        |
 | Zotero attachment storage                                           | Confirmed local PDF/EPUB copies and canonical `fulltext.md` imports         |
 
 Project-owned identifiers use the new names consistently: Python namespace `za_cli`, Zotero tags `za-cli:md` and `za-cli:pdf`, Extension ID `zotero-agentibility@local`, and bridge path `/zotero-agentibility/v1/operation`. `za-cli:md` marks canonical Markdown Full Text; `za-cli:pdf` marks the selected Source Document PDF when disambiguation is needed.
@@ -155,6 +150,25 @@ Project-owned identifiers use the new names consistently: Python namespace `za_c
 <summary><b>Extension updates after the first install</b></summary>
 
 Zotero has no supported add-on-management CLI. Install the XPI manually once; later releases increment the version and publish the XPI plus hashed `updates.json`, allowing Zotero's AddonManager to update it without agent-driven screenshots or desktop automation. See [`zotero-extension/README.md`](zotero-extension/README.md#installation-and-release-updates) and the [CLI-management research](docs/research/zotero-addon-cli-management.md). Never edit Zotero's generated `extensions.json`.
+
+</details>
+
+<details>
+<summary><b>Upgrade from the standalone worker (0.6.x)</b></summary>
+
+Install the matching 0.7.x CLI and Extension together. Retire the old supervisor once the new Extension is ready to own indexing:
+
+```bash
+systemctl --user disable --now zotero-agentibility-index-worker.service \
+  zotero-agentibility-index-reconcile.timer
+systemctl --user stop zotero-agentibility-index-reconcile.service
+rm -f ~/.config/systemd/user/zotero-agentibility-index-worker.service \
+  ~/.config/systemd/user/zotero-agentibility-index-reconcile.service \
+  ~/.config/systemd/user/zotero-agentibility-index-reconcile.timer
+systemctl --user daemon-reload
+```
+
+Zotero starts the replacement child worker. Verify its heartbeat in the Agentibility Console. Existing index and queue files are reused. The former `environment` file is retired; shell configuration applies to terminal commands, and the Extension supplies its child's active Zotero settings.
 
 </details>
 
@@ -185,7 +199,7 @@ Zotero has no supported add-on-management CLI. Install the XPI manually once; la
    za-cli --json find ITEM_KEY "exact phrase" --context 8
    ```
 
-   If search reports `INDEX_UNINITIALIZED`, initialize once with `za-cli --json index update`. Queue a known changed Item with `za-cli --json index refresh --item ITEM_KEY`; the installed user service processes it without blocking research.
+   If search reports `INDEX_UNINITIALIZED`, initialize once with `za-cli --json index update`. Queue a known changed Item with `za-cli --json index refresh --item ITEM_KEY`; Zotero's child worker processes it while research continues.
 
 2. List My Library or name an explicit Collection:
 
@@ -228,7 +242,7 @@ planned command groups are not published commands.
 <details>
 <summary><b>Runtime files and concurrency</b></summary>
 
-Semantic writes use a cross-process update lock and bounded Chroma batches. A user systemd service runs one long-lived `index worker`, which performs a lightweight Zotero SQLite modification-watermark query, polls the durable Item queue, and sleeps while idle. A low-priority timer performs full reconciliation about 15 minutes after activation and then about every 12 hours, with randomized delay. Reads and searches never wait for either process. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
+Semantic writes use a cross-process update lock and bounded Chroma batches. The Extension starts `index worker --managed` with Zotero, forwards native Item notifications, and stops the child when Zotero exits or the Extension is disabled. The worker reads current native metadata through the authenticated `index_catalog` operation and reconciles on startup and every 12 hours. The Agentibility Console in the Item pane shows its heartbeat, queue, active work, errors, and selected Item coverage. Foreground search reads the existing index throughout maintenance. Extension writes pass through one bounded Zotero queue, and `~/.config/zotero-agentibility/audit.jsonl` records only write time, operation, affected keys, result, and error code. It excludes tokens, full text, note bodies, search queries, and read activity.
 
 </details>
 
@@ -237,7 +251,7 @@ Semantic writes use a cross-process update lock and bounded Chroma batches. A us
 
 Identifier/URL ingest, metadata editing, Collection mutation, duplicate merge commands, OCR, DOCX citation automation, and permanent deletion are not yet implemented. Converted images aren't bundled; for figures, go back to the PDF. The catalog and Full Text bridge work with My Library only; group libraries aren't supported yet.
 
-The index is profile-specific and retrieval uses its current snapshot immediately. CLI Full Text changes enter the durable queue; the worker discovers parent and attachment metadata changes through a cheap SQLite watermark. The reconciliation timer catches deletions, linked-file edits, and missed events. Failed extraction is reported as partial coverage rather than silently omitted.
+The index is profile-specific and retrieval uses its current snapshot immediately. CLI Full Text changes and native Zotero notifications enter the durable queue. Reconciliation within the Extension-owned worker catches linked-file edits and changes made while it was stopped. Failed extraction appears as partial coverage in the console.
 
 </details>
 
@@ -292,10 +306,6 @@ The repository is licensed under Apache-2.0. It is based on [`cli-anything-zoter
 Remove **Zotero-Agentibility Bridge** in Zotero's Add-ons manager and restart Zotero, then run:
 
 ```bash
-systemctl --user disable --now zotero-agentibility-index-worker.service \
-  zotero-agentibility-index-reconcile.timer
-rm -f ~/.config/systemd/user/zotero-agentibility-index-{worker,reconcile}.{service,timer}
-systemctl --user daemon-reload
 uv tool uninstall za-cli
 rm -rf ~/.agents/skills/research-with-zotero
 rm -rf ~/.config/zotero-agentibility ~/.local/share/zotero-agentibility
@@ -304,6 +314,10 @@ rm -rf ~/.config/zotero-agentibility ~/.local/share/zotero-agentibility
 Removing project state does not remove Literature Items, PDFs, Markdown attachments, or Zotero's database.
 
 ## Development History
+
+### v0.7.0
+
+The Extension owns worker startup, shutdown, and native change notifications. The Agentibility Console shows indexing state in the Item pane. Indexing uses authenticated native catalog reads and in-process scheduling for reconciliation. The standalone supervisor and SQLite watermark path are retired.
 
 ### v0.6.2
 

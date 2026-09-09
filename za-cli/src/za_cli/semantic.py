@@ -415,7 +415,7 @@ class SemanticIndex:
             })
         return records, bool(read.get("partial", False))
 
-    def update(self, db, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None,
+    def update(self, catalog, data_dir: Path, *, force: bool = False, item_keys: Iterable[str] | None = None,
                show_progress: bool = False) -> dict[str, Any]:
         scoped = item_keys is not None
         requested = list(item_keys) if scoped else None
@@ -447,9 +447,9 @@ class SemanticIndex:
             elif not stats_complete and not scoped and self._count() == 0:
                 stats_complete = True
 
-            catalog = db.index_inventory(requested)
-            current = {entry["key"] for entry in catalog}
-            report = {"scope": "items" if scoped else "library", "total": len(catalog),
+            entries = catalog.index_inventory(requested)
+            current = {entry["key"] for entry in entries}
+            report = {"scope": "items" if scoped else "library", "total": len(entries),
                       "indexed": 0, "updated": 0, "unchanged": 0, "removed": 0,
                       "removed_passages": 0, "errors": [], "partial": False}
             if scoped:
@@ -468,8 +468,8 @@ class SemanticIndex:
                         })
                         report["partial"] = True
             if show_progress:
-                print(f"Updating semantic index: 0/{len(catalog)}", end="", file=sys.stderr, flush=True)
-            for completed, entry in enumerate(catalog, start=1):
+                print(f"Updating semantic index: 0/{len(entries)}", end="", file=sys.stderr, flush=True)
+            for completed, entry in enumerate(entries, start=1):
                 key = entry["key"]
                 try:
                     source = sources.preferred_source(entry["attachments"], Path(data_dir))
@@ -478,7 +478,7 @@ class SemanticIndex:
                         report["unchanged"] += 1
                         continue
 
-                    item = dict(db.lookup(key))
+                    item = dict(catalog.lookup(key))
                     records, partial = self._prepare(key, item, source)
                     old = legacy_rows.get(key, []) if reconciling else self._item_rows(key)
                     embeddings = []
@@ -524,10 +524,11 @@ class SemanticIndex:
                     report["partial"] = True
                 finally:
                     if show_progress:
-                        print(f"\rUpdating semantic index: {completed}/{len(catalog)}", end="", file=sys.stderr, flush=True)
+                        print(f"\rUpdating semantic index: {completed}/{len(entries)}", end="", file=sys.stderr, flush=True)
             if show_progress:
                 print(file=sys.stderr)
             if not scoped:
+                # LiveCatalog validates the entire successful snapshot before any deletion.
                 for key in (set(legacy_rows) | set(inventory)) - current:
                     try:
                         removed = self._delete_item(key, legacy_rows.get(key) if reconciling else None)
@@ -537,8 +538,7 @@ class SemanticIndex:
                         report["removed_passages"] += removed
                     except Exception as exc:
                         report["errors"].append({
-                            "item_key": key,
-                            "code": getattr(exc, "code", "INDEX_WRITE_FAILED"),
+                            "item_key": key, "code": getattr(exc, "code", "INDEX_WRITE_FAILED"),
                             "error": str(exc),
                         })
                         report["partial"] = True

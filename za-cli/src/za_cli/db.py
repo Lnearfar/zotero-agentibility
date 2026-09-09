@@ -12,7 +12,7 @@ import posixpath
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .errors import CliError
 
@@ -61,15 +61,6 @@ def connect_immutable(path: Path) -> sqlite3.Connection:
     connection.execute("PRAGMA query_only=ON")
     return connection
 
-
-def connect_current(path: Path) -> sqlite3.Connection:
-    path = path.expanduser().resolve()
-    if not path.is_file():
-        raise CliError("DATABASE_NOT_FOUND", f"Zotero database not found: {path}")
-    connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=1)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA query_only=ON")
-    return connection
 
 
 class Database:
@@ -293,90 +284,6 @@ class Database:
                     (attachment["itemID"],),
                 )]
         return attachments
-
-    def modified_literature_keys(self, since: str, until: str) -> list[str]:
-        try:
-            with closing(connect_current(self.path)) as conn:
-                rows = conn.execute(
-                    """SELECT DISTINCT parent.key,parent.itemID
-                       FROM items changed
-                       LEFT JOIN itemAttachments attachment ON attachment.itemID=changed.itemID
-                       JOIN items parent ON parent.itemID=COALESCE(attachment.parentItemID,changed.itemID)
-                       JOIN itemTypes parentType ON parentType.itemTypeID=parent.itemTypeID
-                       WHERE parent.libraryID=?
-                       AND parentType.typeName NOT IN ('attachment','note','annotation')
-                       AND changed.dateModified>=? AND changed.dateModified<=?
-                       AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=parent.itemID)
-                       ORDER BY parent.itemID""",
-                    (self.library_id(), since, until),
-                ).fetchall()
-        except sqlite3.OperationalError as exc:
-            if "locked" in str(exc).lower():
-                raise CliError("DATABASE_BUSY", "Zotero database is busy; discovery will retry") from exc
-            raise
-        return [row["key"] for row in rows]
-
-    def index_inventory(self, item_keys: Iterable[str] | None = None) -> list[dict[str, Any]]:
-        requested = None if item_keys is None else list(dict.fromkeys(item_keys))
-        if requested == []:
-            return []
-        with closing(connect_immutable(self.path)) as conn:
-            if requested is None:
-                parents = conn.execute(
-                    """SELECT i.itemID,i.key,i.dateModified FROM items i
-                       JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
-                       WHERE i.libraryID=? AND it.typeName NOT IN ('attachment','note','annotation')
-                       AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=i.itemID)
-                       ORDER BY i.itemID""",
-                    (self.library_id(),),
-                ).fetchall()
-            else:
-                parents = []
-                for offset in range(0, len(requested), 500):
-                    batch = requested[offset : offset + 500]
-                    placeholders = ",".join("?" for _ in batch)
-                    parents.extend(conn.execute(
-                        f"""SELECT i.itemID,i.key,i.dateModified FROM items i
-                            JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
-                            WHERE i.libraryID=? AND i.key IN ({placeholders})
-                            AND it.typeName NOT IN ('attachment','note','annotation')
-                            AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=i.itemID)
-                            ORDER BY i.itemID""",
-                        (self.library_id(), *batch),
-                    ).fetchall())
-            inventory = [{"itemID": row["itemID"], "key": row["key"],
-                          "dateModified": row["dateModified"], "attachments": []} for row in parents]
-            by_id = {item["itemID"]: item for item in inventory}
-            parent_ids = list(by_id)
-            for offset in range(0, len(parent_ids), 500):
-                batch = parent_ids[offset : offset + 500]
-                placeholders = ",".join("?" for _ in batch)
-                rows = conn.execute(
-                    f"""SELECT a.parentItemID,i.itemID,i.key,it.typeName,{_TITLE} AS title,
-                        a.linkMode,a.contentType,a.path AS attachmentPath,i.dateModified,t.name AS tag
-                        FROM itemAttachments a JOIN items i ON i.itemID=a.itemID
-                        JOIN itemTypes it ON it.itemTypeID=i.itemTypeID
-                        LEFT JOIN itemTags itemTag ON itemTag.itemID=i.itemID
-                        LEFT JOIN tags t ON t.tagID=itemTag.tagID
-                        WHERE a.parentItemID IN ({placeholders})
-                        AND NOT EXISTS (SELECT 1 FROM deletedItems d WHERE d.itemID=i.itemID)
-                        ORDER BY a.parentItemID,i.itemID,t.name""",
-                    batch,
-                ).fetchall()
-                seen: dict[int, dict[str, Any]] = {}
-                for row in rows:
-                    attachment = seen.get(row["itemID"])
-                    if attachment is None:
-                        attachment = {key: row[key] for key in (
-                            "itemID", "key", "typeName", "title", "linkMode", "contentType",
-                            "attachmentPath", "dateModified",
-                        )}
-                        attachment["tags"] = []
-                        seen[row["itemID"]] = attachment
-                        by_id[row["parentItemID"]]["attachments"].append(attachment)
-                    if row["tag"] is not None:
-                        attachment["tags"].append(row["tag"])
-        return inventory
 
     def literature_keys(self, collection_key: str | None = None) -> list[str]:
         with closing(connect_immutable(self.path)) as conn:

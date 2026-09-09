@@ -221,6 +221,33 @@ class BridgeTests(unittest.TestCase):
                 BridgeClient(23119, token).operation("fulltext_adopt", {})
         self.assertEqual(caught.exception.code, "WRITE_OUTCOME_UNKNOWN")
 
+    @mock.patch("za_cli.http.urllib.request.build_opener")
+    def test_index_catalog_is_a_read_operation_with_fixed_schema(self, build_opener):
+        build_opener.return_value.open.return_value = FakeResponse(
+            b'{"ok":true,"protocol":1,"operation":"index_catalog","result":{"items":[]}}'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "bridge-token"
+            token.write_text("a" * 64 + "\n", encoding="utf-8")
+            os.chmod(token, 0o600)
+            result = BridgeClient(23119, token).index_catalog(["ABCD1234"])
+        request = build_opener.return_value.open.call_args.args[0]
+        self.assertEqual(json.loads(request.data), {
+            "protocol": 1, "operation": "index_catalog", "arguments": {"item_keys": ["ABCD1234"]},
+        })
+        self.assertEqual(result, {"items": []})
+
+    @mock.patch("za_cli.http.urllib.request.build_opener")
+    def test_index_catalog_read_failure_has_no_unknown_write_outcome(self, build_opener):
+        build_opener.return_value.open.side_effect = TimeoutError()
+        with tempfile.TemporaryDirectory() as tmp:
+            token = Path(tmp) / "bridge-token"
+            token.write_text("a" * 64 + "\n", encoding="utf-8")
+            os.chmod(token, 0o600)
+            with self.assertRaises(CliError) as caught:
+                BridgeClient(23119, token).index_catalog(None)
+        self.assertEqual(caught.exception.code, "ZOTERO_UNAVAILABLE")
+
     def test_token_format_matches_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
             token = Path(tmp) / "bridge-token"

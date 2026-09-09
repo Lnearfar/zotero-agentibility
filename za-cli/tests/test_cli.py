@@ -60,7 +60,7 @@ class CliShapeTests(unittest.TestCase):
                 "--filters", '{"itemType":"journalArticle"}',
             ])
         self.assertEqual(result.exit_code, 0, result.output)
-        database.return_value.lookup.assert_called_once_with("ABCD2345")
+        database.assert_not_called()
         semantic.return_value.search.assert_called_once_with(
             "stability", limit=10, filters={"item_type": "journalArticle"},
             item_keys=["ABCD2345"], item_scope=True,
@@ -99,43 +99,32 @@ class CliShapeTests(unittest.TestCase):
             "count": 1, "by_code": {"SOURCE_NOT_FOUND": 1},
         })
 
-    def test_index_refresh_enqueues_without_updating(self):
+    def test_index_refresh_enqueues_without_sqlite_lookup(self):
         with mock.patch("za_cli.cli._database") as database, \
              mock.patch("za_cli.cli._index_queue") as queue, \
              mock.patch("za_cli.cli._semantic_index") as semantic:
-            database.return_value.lookup.return_value = {"key": "ABCD2345"}
             queue.return_value.enqueue.return_value = {
                 "queued": True, "item_keys": ["ABCD2345"], "events": 1,
             }
-            result = CliRunner().invoke(cli, [
-                "--json", "index", "refresh", "--item", "ABCD2345",
-            ])
+            result = CliRunner().invoke(cli, ["--json", "index", "refresh", "--item", "ABCD2345"])
         self.assertEqual(result.exit_code, 0, result.output)
+        database.assert_not_called()
         queue.return_value.enqueue.assert_called_once_with(["ABCD2345"], reason="explicit-refresh")
         semantic.return_value.update.assert_not_called()
 
-    def test_index_worker_once_drains_one_batch(self):
-        with mock.patch("za_cli.cli._database") as database, \
+    def test_index_worker_once_uses_live_catalog(self):
+        with mock.patch("za_cli.cli._index_catalog") as catalog, \
              mock.patch("za_cli.cli._index_queue") as queue, \
              mock.patch("za_cli.cli._semantic_index") as semantic:
-            queue.return_value.cycle.return_value = {"processed_items": 1, "report": {"errors": []}}
+            queue.return_value.work_once.return_value = {"processed_items": 1, "report": {"errors": []}}
             result = CliRunner().invoke(cli, ["--json", "index", "worker", "--once"])
         self.assertEqual(result.exit_code, 0, result.output)
-        queue.return_value.cycle.assert_called_once_with(
-            semantic.return_value, database.return_value, mock.ANY,
-        )
+        queue.return_value.work_once.assert_called_once_with(semantic.return_value, catalog.return_value, mock.ANY)
 
-    def test_index_worker_once_returns_nonzero_for_partial_batch(self):
-        with mock.patch("za_cli.cli._database"), \
-             mock.patch("za_cli.cli._index_queue") as queue, \
-             mock.patch("za_cli.cli._semantic_index"):
-            queue.return_value.cycle.return_value = {
-                "processed_items": 1,
-                "report": {"errors": [{"item_key": "ABCD2345", "error": "failed"}]},
-            }
-            result = CliRunner().invoke(cli, ["--json", "index", "worker", "--once"])
-        self.assertEqual(result.exit_code, 1, result.output)
-        self.assertEqual(json.loads(result.stdout)["code"], "INDEX_PARTIAL")
+    def test_index_worker_requires_managed_for_continuous_operation(self):
+        result = CliRunner().invoke(cli, ["--json", "index", "worker"])
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(json.loads(result.stderr)["code"], "MANAGED_REQUIRED")
 
     @mock.patch("za_cli.cli.BridgeClient")
     def test_metadata_resolve_requires_confirmation_before_bridge(self, bridge):
@@ -403,7 +392,7 @@ class CliShapeTests(unittest.TestCase):
             }
             database.return_value.schema_check.return_value = {"ok": True}
             semantic_index.return_value.status.return_value = {}
-            queue.return_value.status.return_value = {"worker_running": True, "refreshing": False}
+            queue.return_value.status.return_value = {"worker_running": True, "fresh": True, "refreshing": False, "last_error": None}
             result = CliRunner().invoke(cli, ["--json", "app", "doctor"])
         self.assertEqual(result.exit_code, 0, result.output)
         semantic_index.return_value.status.assert_called_once_with()
@@ -429,7 +418,9 @@ class CliShapeTests(unittest.TestCase):
             semantic_index.return_value.status.return_value = {"initialized": True}
             queue.return_value.status.return_value = {
                 "worker_running": False,
+                "fresh": False,
                 "refreshing": False,
+                "last_error": None,
                 "pending_items": 2,
             }
             result = CliRunner().invoke(cli, ["--json", "app", "doctor"])

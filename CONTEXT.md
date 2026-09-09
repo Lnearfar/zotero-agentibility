@@ -42,6 +42,10 @@ _Avoid_: Note, annotation, summary, cleaned Markdown
 A line-addressable portion of a **Markdown Full Text** or fallback PDF **Source Document** used for retrieval and exact verification. EPUB can establish identity and be reported as a source, but it requires reviewed Markdown before Passage reading or indexing. A Passage retains its source and location and is not a summary.
 _Avoid_: Summary, unsupported answer
 
+**Agentibility Console**:
+The Zotero-native view of Passage indexing health, queued and active work, coverage errors, and the selected Literature Item's index state.
+_Avoid_: JavaScript console, terminal, separate literature database
+
 **Collection**:
 A named grouping of **Literature Items**. A Literature Item may belong to multiple Collections; removing it from one Collection removes only that membership, not the Literature Item from the library.
 _Avoid_: Folder, directory

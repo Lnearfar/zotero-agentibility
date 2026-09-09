@@ -1,6 +1,6 @@
 # zotero-extension
 
-Authenticated fixed-operation bridge for Zotero-Agentibility. Installation is manual and documented in the repository root README.
+Authenticated fixed-operation bridge and Agentibility Console for Zotero-Agentibility. The Extension owns the Python indexing worker, native notifications, and Item-pane status.
 
 ## Build
 
@@ -9,6 +9,12 @@ make
 ```
 
 This reads the version from `manifest.json`, validates the source, creates `build/zotero-agentibility-<version>.xpi`, and regenerates the hashed `updates.json`. Install the current XPI through Zotero's Add-ons UI once; later releases can update automatically through GitHub Releases.
+
+## Development with hot reload
+
+Run `npm start` from the repository root after the setup in [docs/development.md](../docs/development.md). Scaffold temporarily installs the unpacked Extension in an isolated development profile and reloads it when source files change. No manual XPI installation is needed for development. The toolkit library is not required.
+
+Keep the normal Zotero profile separate. Reload waits for the old worker to exit before starting its replacement; the production bridge does not expose arbitrary execution.
 
 ## Installation and release updates
 
@@ -31,6 +37,6 @@ gh release create "v$version" \
 
 A stopped-profile XPI replacement is only an unsupported development fallback. It can leave stale AddonManager compatibility state—especially after an `appDisabled` result—even when the archive changed. Never use it as the release update path, never overwrite a running profile, and never edit generated add-on registry/cache files. The evidence and rejected pseudo-CLI flags are recorded in [`../docs/research/zotero-addon-cli-management.md`](../docs/research/zotero-addon-cli-management.md).
 
-On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health` plus fixed `add_file`, `metadata_resolve`, `fulltext_adopt`, and `fulltext_import` operations; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`. Local-document reuse is authorized by a live stored-file SHA-256 (the Zotero attachment MD5 is only a prefilter). Add/recognition scans run outside the short mutation lock; EPUB attachments remain native sources but are not tagged `za-cli:pdf` (that marker is PDF-only).
+On first startup the Extension creates `~/.config/zotero-agentibility/bridge-token` with mode `0600`. Protocol 1 allows `health`, the native read `index_catalog`, plus fixed `add_file`, `metadata_resolve`, `fulltext_adopt`, and `fulltext_import` operations; arbitrary JavaScript and generic Zotero mutation requests are unavailable. Writes are serialized and recorded without content in `~/.config/zotero-agentibility/audit.jsonl`. Local-document reuse is authorized by a live stored-file SHA-256 (the Zotero attachment MD5 is only a prefilter). Add/recognition scans run outside the short mutation lock; EPUB attachments remain native sources but are not tagged `za-cli:pdf` (that marker is PDF-only).
 
 Run `za-cli --json app doctor` after installation or an update; CLI and Extension patch versions may differ when bridge protocol 1 remains compatible.

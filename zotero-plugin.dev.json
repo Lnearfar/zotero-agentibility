@@ -1,0 +1,19 @@
+{
+  "logLevel": "INFO",
+  "zotero": {
+    "binaryPath": "/usr/lib/zotero/zotero-bin",
+    "applicationPath": "/usr/lib/zotero/app/application.ini",
+    "startArgs": ["--headless", "--no-remote"],
+    "httpPort": 23229,
+    "homePath": ".scaffold/zotero-home",
+    "profilePath": ".scaffold/zotero-profile",
+    "dataPath": ".scaffold/zotero-data"
+  },
+  "worker": {
+    "executablePath": "za-cli/.venv/bin/za-cli"
+  },
+  "devOnce": {
+    "readyTimeoutMs": 120000,
+    "settleMs": 5000
+  }
+}

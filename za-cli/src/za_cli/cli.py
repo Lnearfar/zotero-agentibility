@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -125,6 +126,13 @@ def _index_queue(ctx: click.Context):
     from .semantic import default_index_path
 
     return IndexQueue(default_index_path(_config(ctx).data_dir))
+
+
+def _index_catalog(ctx: click.Context):
+    from .catalog import LiveCatalog
+
+    config = _config(ctx)
+    return LiveCatalog(BridgeClient(config.port, config.config_dir / "bridge-token"))
 
 
 def _queue_index_after_mutation(
@@ -255,9 +263,11 @@ def app_doctor(ctx: click.Context, deep: bool) -> None:
     queue = _index_queue(ctx).status()
     index["queue"] = queue
     index["maintenance"] = {
-        "ok": queue.get("worker_running") is True,
+        "ok": queue.get("worker_running") is True and queue.get("fresh") is True and not queue.get("last_error"),
         "worker_running": queue.get("worker_running", False),
+        "fresh": queue.get("fresh", False),
         "refreshing": queue.get("refreshing", False),
+        "last_error": queue.get("last_error"),
         "pending_items": queue.get("pending_items", 0),
     }
     database = {"ok": False, "path": str(config.data_dir / "zotero.sqlite")}
@@ -363,12 +373,9 @@ def index_update(
     if item_keys and collection:
         raise CliError("INVALID_ARGUMENT", "Use --collection or --item, not both")
     config = _config(ctx)
-    db = _database(ctx)
-    for key in item_keys:
-        db.lookup(key)
-    selected_keys = _collection_scope(ctx, db, collection) if collection else list(item_keys) or None
+    selected_keys = _collection_scope(ctx, _database(ctx), collection) if collection else (list(item_keys) or None)
     result = _semantic_index(ctx).update(
-        db, config.data_dir, force=force, item_keys=selected_keys, show_progress=True
+        _index_catalog(ctx), config.data_dir, force=force, item_keys=selected_keys, show_progress=True
     )
     errors = result.get("errors", [])
     emit(ctx, result, ok=not errors, code="OK" if not errors else "INDEX_PARTIAL")
@@ -380,7 +387,7 @@ def index_update(
 @click.pass_context
 def index_reconcile(ctx: click.Context) -> None:
     config = _config(ctx)
-    report = _semantic_index(ctx).update(_database(ctx), config.data_dir)
+    report = _semantic_index(ctx).update(_index_catalog(ctx), config.data_dir)
     counts: dict[str, int] = {}
     for error in report.get("errors", []):
         code = str(error.get("code") or "INDEX_WRITE_FAILED")
@@ -403,32 +410,49 @@ def index_status(ctx: click.Context, deep: bool) -> None:
 @click.option("--item", "item_keys", multiple=True, required=True, help="Literature Item to refresh; repeatable.")
 @click.pass_context
 def index_refresh(ctx: click.Context, item_keys: tuple[str, ...]) -> None:
-    db = _database(ctx)
     keys = list(dict.fromkeys(item_keys))
-    for key in keys:
-        db.lookup(key)
     emit(ctx, _index_queue(ctx).enqueue(keys, reason="explicit-refresh"))
 
 
 @index_group.command("worker", help="Process queued semantic index refreshes.")
-@click.option("--once", is_flag=True, help="Process one bounded batch and exit.")
+@click.option("--managed", is_flag=True, help="Run the extension-owned managed stdin runtime.")
+@click.option("--data-dir", type=click.Path(path_type=Path), help="Zotero data directory supplied by the Extension.")
+@click.option("--port", type=click.IntRange(1, 65535), help="Live Zotero HTTP port supplied by the Extension.")
+@click.option("--config-dir", type=click.Path(path_type=Path), help="Bridge configuration directory supplied by the Extension.")
+@click.option("--once", is_flag=True, help="Process one bounded queued batch and exit.")
 @click.option("--poll-seconds", default=5.0, show_default=True, type=click.FloatRange(min=0.1),
-              help="Idle polling interval for the continuous worker.")
+              help="Managed status heartbeat interval.")
+@click.option("--retry-seconds", type=click.FloatRange(min=0.1), help="Failed-item retry interval supplied by the Extension.")
+@click.option("--reconcile-seconds", type=click.FloatRange(min=0.1), help="Reconciliation interval supplied by the Extension.")
 @click.pass_context
-def index_worker(ctx: click.Context, once: bool, poll_seconds: float) -> None:
+def index_worker(ctx: click.Context, managed: bool, once: bool, poll_seconds: float,
+                 data_dir: Path | None, port: int | None, config_dir: Path | None,
+                 retry_seconds: float | None, reconcile_seconds: float | None) -> None:
+    if managed and once:
+        raise CliError("INVALID_ARGUMENT", "Use --managed or --once")
+    if not managed and not once:
+        raise CliError("MANAGED_REQUIRED", "Continuous index worker requires --managed")
     config = _config(ctx)
+    config = RuntimeConfig(config.json_output,
+                           data_dir.expanduser() if data_dir is not None else config.data_dir,
+                           port if port is not None else config.port,
+                           config_dir.expanduser() if config_dir is not None else config.config_dir)
+    ctx.find_root().obj["config"] = config
     queue = _index_queue(ctx)
     semantic_index = _semantic_index(ctx)
-    db = _database(ctx)
+    catalog = _index_catalog(ctx)
     if once:
         with queue.worker():
-            result = queue.cycle(semantic_index, db, config.data_dir)
+            result = queue.work_once(semantic_index, catalog, config.data_dir)
         errors = (result.get("report") or {}).get("errors", [])
         emit(ctx, result, ok=not errors, code="OK" if not errors else "INDEX_PARTIAL")
         if errors:
             ctx.exit(1)
         return
-    queue.run(semantic_index, db, config.data_dir, poll_seconds=poll_seconds)
+    if retry_seconds is None or reconcile_seconds is None:
+        raise CliError("RUNTIME_CONFIG_REQUIRED", "Managed workers require --retry-seconds and --reconcile-seconds from index-runtime.json")
+    queue.run_managed(semantic_index, catalog, config.data_dir, poll_seconds=poll_seconds,
+                      retry_seconds=retry_seconds, reconcile_seconds=reconcile_seconds)
 
 
 @index_group.command("inspect", help="Inspect indexed Passage metadata.")
@@ -473,13 +497,13 @@ def search_command(
         if "itemType" in parsed_filters and "item_type" not in parsed_filters:
             parsed_filters["item_type"] = parsed_filters.pop("itemType")
 
-    db = _database(ctx)
     item_keys = None
     if item_key:
-        db.lookup(item_key)
+        if not re.fullmatch(r"[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}", item_key):
+            raise CliError("INVALID_ITEM_KEY", f"Invalid Zotero Item Key: {item_key}")
         item_keys = [item_key]
     elif collection:
-        item_keys = _collection_scope(ctx, db, collection)
+        item_keys = _collection_scope(ctx, _database(ctx), collection)
 
     result = _semantic_index(ctx).search(
         query,

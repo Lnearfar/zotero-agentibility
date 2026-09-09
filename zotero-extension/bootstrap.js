@@ -13,7 +13,7 @@ var VERSION = null;
 var MAX_BODY_BYTES = 4096;
 var FULLTEXT_TAG = "za-cli:md";
 var SOURCE_TAG = "za-cli:pdf";
-var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file"]);
+var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file", "index_catalog"]);
 var bearerToken = null;
 var writeLocked = false;
 var writeWaiters = [];
@@ -24,6 +24,8 @@ var originalBodyData = null;
 var originalHandleRequest = null;
 var bridgeBodyData = null;
 var bridgeHandleRequest = null;
+var agentibilityRuntime = null;
+var extensionRunning = false;
 
 var Cc = Components.classes;
 var Ci = Components.interfaces;
@@ -1511,6 +1513,109 @@ async function _executeFulltextWrite(operation, args) {
   }
 }
 
+function _validateIndexCatalogArguments(args) {
+  if (!_sameKeys(args, ["item_keys"])) {
+    throw _operationError("BAD_ARGUMENTS", "index_catalog arguments do not match the schema", 400);
+  }
+  if (args.item_keys === null) return args;
+  if (!Array.isArray(args.item_keys) || args.item_keys.length > 100) {
+    throw _operationError("BAD_ARGUMENTS", "item_keys must be null or an array of at most 100 keys", 400);
+  }
+  var seen = Object.create(null);
+  for (var i = 0; i < args.item_keys.length; i++) {
+    if (typeof args.item_keys[i] !== "string"
+        || !/^[23456789ABCDEFGHIJKLMNPQRSTUVWXYZ]{8}$/.test(args.item_keys[i])
+        || seen[args.item_keys[i]]) {
+      throw _operationError("BAD_ARGUMENTS", "item_keys must contain distinct valid Zotero keys", 400);
+    }
+    seen[args.item_keys[i]] = true;
+  }
+  return args;
+}
+
+function _catalogCreator(creator) {
+  if (creator.name) return String(creator.name);
+  return [creator.firstName, creator.lastName].filter(Boolean).join(" ");
+}
+
+async function _catalogAttachment(item) {
+  await item.loadDataType("tags");
+  var path = null;
+  try { path = await item.getFilePathAsync(); }
+  catch (error) {}
+  return {
+    key: item.key,
+    itemID: item.id,
+    typeName: "attachment",
+    title: item.getField("title") || "",
+    linkMode: item.attachmentLinkMode,
+    contentType: item.attachmentContentType || "",
+    attachmentPath: path || "",
+    dateModified: item.dateModified,
+    tags: item.getTags().map(function (tag) { return tag.tag; })
+  };
+}
+
+async function _catalogItem(item) {
+  await item.loadDataType("childItems");
+  await item.loadDataType("tags");
+  var attachments = await Zotero.Items.getAsync(item.getAttachments(false));
+  attachments = Array.isArray(attachments) ? attachments : attachments ? [attachments] : [];
+  var result = [];
+  for (var i = 0; i < attachments.length; i++) {
+    if (attachments[i] && !attachments[i].deleted && attachments[i].isAttachment()) {
+      result.push(await _catalogAttachment(attachments[i]));
+    }
+  }
+  var date = item.getField("date") || "";
+  var year = (String(date).match(/(?:18|19|20)\d{2}/) || [null])[0];
+  return {
+    key: item.key,
+    itemID: item.id,
+    dateModified: item.dateModified,
+    typeName: Zotero.ItemTypes.getName(item.itemTypeID),
+    title: item.getField("title") || "",
+    creators: item.getCreators().map(_catalogCreator).filter(Boolean),
+    year: year || "",
+    doi: item.getField("DOI") || "",
+    dateAdded: item.dateAdded || "",
+    fields: {
+      date: date,
+      DOI: item.getField("DOI") || "",
+      abstractNote: item.getField("abstractNote") || "",
+      publicationTitle: item.getField("publicationTitle") || "",
+      url: item.getField("url") || "",
+      extra: item.getField("extra") || ""
+    },
+    tags: item.getTags().map(function (tag) { return tag.tag; }),
+    attachments: result
+  };
+}
+
+async function _indexCatalog(args) {
+  var libraryID = Zotero.Libraries.userLibraryID;
+  var items;
+  if (args.item_keys === null) {
+    items = await Zotero.Items.getAll(libraryID, false, false);
+  }
+  else {
+    items = [];
+    for (var i = 0; i < args.item_keys.length; i++) {
+      var item = await Zotero.Items.getByLibraryAndKeyAsync(libraryID, args.item_keys[i]);
+      if (item) items.push(item);
+    }
+  }
+  var result = [];
+  for (var j = 0; j < items.length; j++) {
+    var candidate = items[j];
+    if (candidate && !candidate.deleted && candidate.libraryID === libraryID
+        && candidate.isRegularItem && candidate.isRegularItem()) {
+      result.push(await _catalogItem(candidate));
+    }
+  }
+  return { items: result };
+}
+
 function _handleBody(handler, raw) {
   var request;
   try {
@@ -1545,21 +1650,25 @@ function _handleBody(handler, raw) {
 
   var args;
   try {
-    args = request.operation === "metadata_resolve"
-      ? _validateMetadataArguments(request.arguments)
-      : request.operation === "add_file"
-        ? _validateAddFileArguments(request.arguments)
-        : _validateFulltextArguments(request.arguments, request.operation);
+    args = request.operation === "index_catalog"
+      ? _validateIndexCatalogArguments(request.arguments)
+      : request.operation === "metadata_resolve"
+        ? _validateMetadataArguments(request.arguments)
+        : request.operation === "add_file"
+          ? _validateAddFileArguments(request.arguments)
+          : _validateFulltextArguments(request.arguments, request.operation);
   }
   catch (error) {
     _sendOperationError(handler, error);
     return;
   }
-  var operation = request.operation === "metadata_resolve"
-    ? _executeMetadataResolve(args)
-    : request.operation === "add_file"
-      ? _executeAddFile(args)
-      : _executeFulltextWrite(request.operation, args);
+  var operation = request.operation === "index_catalog"
+    ? _indexCatalog(args)
+    : request.operation === "metadata_resolve"
+      ? _executeMetadataResolve(args)
+      : request.operation === "add_file"
+        ? _executeAddFile(args)
+        : _executeFulltextWrite(request.operation, args);
   operation.then(function (result) {
     _send(handler, 200, { ok: true, protocol: PROTOCOL, operation: request.operation, result: result });
   }).catch(function (error) {
@@ -1771,8 +1880,38 @@ function _loadOrCreateToken() {
   return _readToken(file);
 }
 
-function startup({ version }) {
+function _workerExecutable() {
+  var configured = Services.prefs.getStringPref("extensions.zotero-agentibility.zaCliPath", "");
+  if (configured) return configured;
+  var home = Services.dirsvc.get("Home", Ci.nsIFile);
+  home.append(".local");
+  home.append("bin");
+  home.append("za-cli");
+  return home.path;
+}
+
+async function _startWorkerRuntime(rootURI) {
+  var uri = String(rootURI && (rootURI.spec || rootURI) || "");
+  if (!uri) throw new Error("Extension resource URI is unavailable");
+  await Zotero.Server.init();
+  if (!extensionRunning) return;
+  Services.scriptloader.loadSubScript(uri + "runtime.js", this);
+  var subprocess = ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs").Subprocess;
+  agentibilityRuntime = AgentibilityRuntime.create({
+    Zotero: Zotero,
+    settings: JSON.parse(await Zotero.File.getContentsAsync(uri + "index-runtime.json")),
+    Subprocess: subprocess,
+    executable: _workerExecutable(),
+    dataDirectory: Zotero.DataDirectory.dir,
+    httpPort: Zotero.Server.port,
+    configDirectory: _configDirectory().path
+  });
+  await agentibilityRuntime.start();
+}
+
+async function startup({ version, rootURI }) {
   try {
+    extensionRunning = true;
     VERSION = version;
     bearerToken = _loadOrCreateToken();
     _installServerHooks();
@@ -1789,6 +1928,9 @@ function startup({ version }) {
       }
     };
     Zotero.Server.Endpoints[ENDPOINT] = bridgeEndpoint;
+    await _startWorkerRuntime(rootURI).catch(function (error) {
+      Zotero.logError(new Error("Zotero-Agentibility worker disabled: " + error.message));
+    });
     Zotero.debug("[Zotero-Agentibility] bridge endpoint registered");
   }
   catch (e) {
@@ -1800,7 +1942,14 @@ function startup({ version }) {
   }
 }
 
-function shutdown() {
+async function shutdown() {
+  extensionRunning = false;
+  var runtime = agentibilityRuntime;
+  agentibilityRuntime = null;
+  if (runtime) {
+    try { await runtime.stop(); }
+    catch (error) { Zotero.logError(error); }
+  }
   delete Zotero.Server.Endpoints[ENDPOINT];
   _removeServerHooks();
   VERSION = null;

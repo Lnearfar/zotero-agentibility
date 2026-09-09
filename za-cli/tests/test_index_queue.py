@@ -1,9 +1,10 @@
+import io
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
-from za_cli.errors import CliError
 from za_cli.index_queue import IndexQueue
 
 
@@ -13,21 +14,14 @@ class SemanticIndex:
         self.on_update = on_update
         self.calls = []
 
-    def update(self, db, data_dir, *, item_keys):
-        self.calls.append(list(item_keys))
+    def update(self, catalog, data_dir, *, item_keys=None):
+        self.calls.append(None if item_keys is None else list(item_keys))
         if self.on_update:
             self.on_update()
         return self.report
 
-
-class DB:
-    def __init__(self, keys):
-        self.keys = keys
-        self.calls = []
-
-    def modified_literature_keys(self, since, until):
-        self.calls.append((since, until))
-        return list(self.keys)
+    def _state(self):
+        return {"stats": {"passages": 3, "items": 1}, "item_stats": {"ABCD1234": {"passages": 3}}}
 
 
 class IndexQueueTests(unittest.TestCase):
@@ -39,86 +33,67 @@ class IndexQueueTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_first_discovery_initializes_watermark_without_backfill(self):
-        db = DB(["ABCD1234"])
-        result = self.queue.discover(db, until="2026-08-20 10:00:00")
-        self.assertTrue(result["initialized"])
-        self.assertEqual(db.calls, [])
-        self.assertEqual(self.queue.status()["pending_events"], 0)
-
-    def test_later_discovery_queues_modified_parent_keys(self):
-        db = DB([])
-        self.queue.discover(db, until="2026-08-20 10:00:00")
-        db.keys = ["ABCD1234"]
-        result = self.queue.discover(db, until="2026-08-20 10:01:00")
-        self.assertEqual(db.calls, [("2026-08-20 10:00:00", "2026-08-20 10:01:00")])
-        self.assertEqual(result["item_keys"], ["ABCD1234"])
-        self.assertEqual(self.queue.status()["pending_items"], 1)
-
-    def test_cycle_processes_existing_queue_when_discovery_is_busy(self):
-        self.queue.discover(DB([]), until="2026-08-20 10:00:00")
-        self.queue.enqueue(["ABCD1234"])
-
-        class BusyDB:
-            def modified_literature_keys(self, since, until):
-                raise CliError("DATABASE_BUSY", "Zotero database is busy")
-
-        semantic = SemanticIndex()
-        result = self.queue.cycle(semantic, BusyDB(), self.root, until="2026-08-20 10:01:00")
-        self.assertTrue(result["discovery"]["deferred"])
-        self.assertEqual(semantic.calls, [["ABCD1234"]])
-        self.assertEqual(self.queue.status()["pending_items"], 0)
-
     def test_enqueue_is_durable_and_worker_coalesces_duplicate_keys(self):
         self.queue.enqueue(["ABCD1234", "ABCD1234", "EFGH5678"], reason="test")
-        status = self.queue.status()
-        self.assertEqual(status["pending_events"], 2)
-        self.assertEqual(status["pending_items"], 2)
-
+        self.assertEqual(self.queue.status()["pending_keys"], 2)
         semantic = SemanticIndex()
         result = self.queue.work_once(semantic, object(), self.root)
         self.assertEqual(semantic.calls, [["ABCD1234", "EFGH5678"]])
         self.assertEqual(result["processed_items"], 2)
-        self.assertEqual(self.queue.status()["pending_events"], 0)
+        self.assertEqual(self.queue.status()["pending_items"], 0)
 
-    def test_failed_item_remains_pending_while_success_is_acknowledged(self):
+    def test_failed_item_moves_to_durable_retry_while_success_is_acknowledged(self):
         self.queue.enqueue(["ABCD1234", "EFGH5678"])
         semantic = SemanticIndex({"errors": [{"item_key": "EFGH5678", "error": "failed"}]})
         result = self.queue.work_once(semantic, object(), self.root)
         self.assertEqual(result["acknowledged_items"], 1)
-        status = self.queue.status()
-        self.assertEqual((status["pending_events"], status["pending_items"]), (1, 1))
+        self.assertEqual(self.queue.status()["pending_keys"], 1)
+        self.assertEqual(self.queue.status()["failed_events"], 1)
+
+    def test_new_work_is_processed_with_a_retrying_failure(self):
+        self.queue.enqueue(["ABCD1234"])
+        self.queue.work_once(SemanticIndex({"errors": [{"item_key": "ABCD1234", "error": "failed"}]}), object(), self.root)
+        self.queue.enqueue(["EFGH5678"])
+        semantic = SemanticIndex({"errors": [{"item_key": "ABCD1234", "error": "failed"}]})
+        self.queue.work_once(semantic, object(), self.root)
+        self.assertIn("EFGH5678", semantic.calls[-1])
+        self.assertEqual(self.queue.status()["pending_keys"], 1)
 
     def test_event_enqueued_during_update_is_not_acknowledged(self):
         self.queue.enqueue(["ABCD1234"])
         semantic = SemanticIndex(on_update=lambda: self.queue.enqueue(["ABCD1234"], reason="changed-again"))
         self.queue.work_once(semantic, object(), self.root)
-        self.assertEqual(self.queue.status()["pending_events"], 1)
+        self.assertEqual(self.queue.status()["pending_items"], 1)
 
-    def test_refreshing_is_true_only_during_an_active_batch(self):
-        states = []
-        self.queue.enqueue(["ABCD1234"])
-        semantic = SemanticIndex(on_update=lambda: states.append(self.queue.runtime_status()))
-        with self.queue.worker():
-            self.assertFalse(self.queue.runtime_status()["refreshing"])
-            self.queue.work_once(semantic, object(), self.root)
-            self.assertFalse(self.queue.runtime_status()["refreshing"])
-        self.assertEqual(states, [{"worker_running": True, "refreshing": True}])
-
-    def test_malformed_event_is_quarantined(self):
+    def test_malformed_event_is_quarantined_once(self):
         self.queue.pending.mkdir(parents=True)
         (self.queue.pending / "broken.json").write_text("{", encoding="utf-8")
         result = self.queue.work_once(SemanticIndex(), object(), self.root)
         self.assertEqual(result["quarantined_events"], 1)
         self.assertEqual(self.queue.status()["failed_events"], 1)
 
-    def test_failed_update_leaves_snapshot_pending(self):
-        self.queue.enqueue(["ABCD1234"])
+    def test_managed_pipe_persists_notification_and_stops_on_shutdown(self):
+        output = io.StringIO()
         semantic = SemanticIndex()
-        semantic.update = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("busy"))
-        with self.assertRaisesRegex(RuntimeError, "busy"):
-            self.queue.work_once(semantic, object(), self.root)
-        self.assertEqual(self.queue.status()["pending_events"], 1)
+        class Pipe:
+            def __iter__(self):
+                yield '{"operation":"enqueue","item_keys":["ABCD1234"]}\n'
+                time.sleep(.05)
+                yield '{"operation":"shutdown"}\n'
+
+        self.queue.run_managed(semantic, object(), self.root, input_stream=Pipe(), output_stream=output, poll_seconds=.01)
+        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertTrue(events and all(event["event"] == "status" for event in events))
+        self.assertTrue({"phase", "heartbeat", "pending_items", "pending_keys", "active_item_keys", "last_error",
+                         "last_report", "last_updated", "last_reconcile", "count", "item_count", "item_stats", "errors"}
+                        <= set(events[-1]["state"]))
+        self.assertIn(["ABCD1234"], semantic.calls)
+        self.assertEqual(self.queue.status()["runtime"]["phase"], "stopped")
+
+    def test_managed_pipe_stops_at_eof(self):
+        self.queue.run_managed(SemanticIndex(), object(), self.root, input_stream=io.StringIO(),
+                               output_stream=io.StringIO(), poll_seconds=.01)
+        self.assertEqual(self.queue.status()["runtime"]["phase"], "stopped")
 
     def test_worker_lock_reports_running_and_rejects_second_worker(self):
         with self.queue.worker():
@@ -126,7 +101,6 @@ class IndexQueueTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "Another index worker"):
                 with self.queue.worker():
                     pass
-        self.assertFalse(self.queue.status()["worker_running"])
 
     def test_enqueue_rejects_invalid_item_key(self):
         with self.assertRaisesRegex(Exception, "Invalid Zotero Item Key"):

@@ -1,0 +1,11 @@
+{
+  "heartbeat_seconds": 5,
+  "retry_seconds": 30,
+  "reconcile_seconds": 43200,
+  "debounce_ms": 50,
+  "restart_limit": 3,
+  "restart_delay_ms": 1000,
+  "shutdown_timeout_ms": 5000,
+  "max_status_line_bytes": 8388608,
+  "max_status_buffer_bytes": 16777216
+}

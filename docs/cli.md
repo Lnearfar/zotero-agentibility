@@ -128,7 +128,8 @@ never sends paper Full Text to a metadata route.
 `app doctor` checks Zotero, the shared bearer token, bridge protocol, required
 Linux tools, database schema, cached index state, and whether the index worker is
 running. A stopped worker makes the result `DEGRADED`, because new Zotero
-changes cannot reach the index. `index worker` is a long-lived foreground
-process installed through user systemd; the timer runs `index reconcile` for
-maintenance. Search remains on the current index snapshot and never performs a
-hidden update.
+changes cannot reach the index. The Extension starts `index worker --managed`
+with Zotero and owns its shutdown, native change notifications, and console.
+The child performs startup and periodic reconciliation. `index worker --once`
+is available for diagnosis. Search reads the current index snapshot.
+Indexing metadata comes from the fixed native `index_catalog` read operation.

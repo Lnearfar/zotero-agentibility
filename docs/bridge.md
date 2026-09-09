@@ -44,8 +44,26 @@ Requests use an exact fixed-operation envelope:
 {"protocol":1,"operation":"health","arguments":{}}
 ```
 
-The current Extension and `BridgeClient` allow exactly `health`, `add_file`,
-`fulltext_adopt`, `fulltext_import`, and `metadata_resolve`.
+The current Extension and `BridgeClient` allow exactly `health`, `index_catalog`,
+`add_file`, `fulltext_adopt`, `fulltext_import`, and `metadata_resolve`.
+
+`index_catalog` reads current My Library metadata and attachment inventories for
+indexing. `item_keys` accepts up to 100 explicit Item Keys, or `null` for a full
+reconciliation snapshot:
+
+```json
+{"protocol":1,"operation":"index_catalog","arguments":{"item_keys":["ABCD2345"]}}
+```
+
+A successful response contains `result.items`, with live regular Items and their
+attachment metadata. Deleted or missing Items are omitted. The worker validates
+the snapshot before using an omission to remove derived passages. Read failures
+preserve queued work and existing index records. This authenticated read uses
+native Zotero state and runs outside the write lock and mutation audit. Its
+transport errors remain read errors.
+
+See [ADR 0009](adr/0009-extension-owned-index-runtime.md) for the Extension-owned
+worker and Agentibility Console.
 
 `add_file` imports one reviewed local PDF/EPUB through Zotero. `library_id` is
 present for future library scope, but the current operation requires My Library:

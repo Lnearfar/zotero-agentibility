@@ -1,0 +1,24 @@
+{
+  "name": "zotero-agentibility-dev",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated Zotero-Agentibility extension development workflow",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lnearfar/zotero-agentibility.git"
+  },
+  "config": {
+    "prefsPrefix": "extensions.zotero-agentibility"
+  },
+  "engines": {
+    "node": ">=22.8.0"
+  },
+  "scripts": {
+    "build": "node scripts/zotero-plugin-dev.mjs build",
+    "start": "node scripts/zotero-plugin-dev.mjs serve",
+    "dev:once": "node scripts/zotero-plugin-dev.mjs once"
+  },
+  "devDependencies": {
+    "zotero-plugin-scaffold": "0.8.2"
+  }
+}

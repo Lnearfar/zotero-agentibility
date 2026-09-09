@@ -20,10 +20,16 @@ require manifest.json '"strict_max_version": "10.*"'
 require bootstrap.js 'var ENDPOINT = "/zotero-agentibility/v1/operation";'
 require bootstrap.js 'var PROTOCOL = 1;'
 require bootstrap.js 'var VERSION = null;'
-require bootstrap.js 'function startup({ version })'
+require bootstrap.js 'function startup({ version, rootURI })'
 require bootstrap.js 'VERSION = version;'
 require bootstrap.js 'var MAX_BODY_BYTES = 4096;'
-require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file"]);'
+require bootstrap.js 'var ALLOWED_OPERATIONS = Object.freeze(["health", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file", "index_catalog"]);'
+require bootstrap.js 'function _validateIndexCatalogArguments(args)'
+require bootstrap.js 'async function _indexCatalog(args)'
+require bootstrap.js 'Zotero.Items.getByLibraryAndKeyAsync(libraryID, args.item_keys[i])'
+require bootstrap.js 'Services.scriptloader.loadSubScript(uri + "runtime.js", this);'
+require bootstrap.js 'Zotero.Server.port'
+require bootstrap.js 'await runtime.stop()'
 require bootstrap.js 'source_path'
 require bootstrap.js 'add_file'
 require bootstrap.js 'library_id'
@@ -143,18 +149,25 @@ if sed -n '/async function _attachAddedToParent(/,/async function _reuseAddedAtt
   printf 'parent EPUB imports must not receive the PDF-only Source Document marker\n' >&2
   exit 1
 fi
-if grep -Eq '(^|[^[:alnum:]_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\(' bootstrap.js; then
-  printf 'bootstrap.js contains dynamic code execution\n' >&2
+if grep -Eq '(^|[^[:alnum:]_$])eval[[:space:]]*\(|new[[:space:]]+Function[[:space:]]*\(' bootstrap.js runtime.js; then
+  printf 'extension contains dynamic code execution\n' >&2
   exit 1
 fi
+node --check bootstrap.js
+node --check runtime.js
+node runtime.test.js
 
 mkdir -p "$(dirname -- "$XPI")"
 rm -f "$XPI"
-zip -X -q "$XPI" manifest.json bootstrap.js LICENSE UPSTREAM.md
+zip -X -q "$XPI" manifest.json bootstrap.js runtime.js locale/en-US/agentibility.ftl LICENSE UPSTREAM.md
+zip -X -j -q "$XPI" ../index-runtime.json
 expected='manifest.json
 bootstrap.js
+runtime.js
+locale/en-US/agentibility.ftl
 LICENSE
-UPSTREAM.md'
+UPSTREAM.md
+index-runtime.json'
 actual=$(unzip -Z1 "$XPI")
 if [ "$actual" != "$expected" ]; then
   printf 'unexpected XPI contents:\n%s\n' "$actual" >&2

@@ -1,4 +1,6 @@
 .venv/
+node_modules/
+.scaffold/
 __pycache__/
 *.py[cod]
 *.egg-info/

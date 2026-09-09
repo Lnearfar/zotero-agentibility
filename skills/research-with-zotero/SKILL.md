@@ -7,36 +7,78 @@ compatibility: Linux; requires Zotero Desktop running, za-cli, the matching Zote
 
 # Research with Zotero
 
-This is a human-directed, Zotero-owned workflow. The researcher sets goals and policy; the Agent may execute any installed operation, while Zotero remains the sole write path and source of truth. Never invent unsupported commands, bypass Zotero with direct database/storage writes, or execute arbitrary JavaScript. Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it with that quoted path in Bash commands. Do not inspect the repository or read a bundled script unless its command fails.
+Instructions for using `za-cli` with the local Zotero library.
 
-## Start
+## What is `za-cli`?
 
-Start the requested Zotero operation immediately. Do not run CLI help, `app doctor`, or index status/update as routine preparation.
+A command-line interface for searching, reading, and managing Zotero literature.
 
-- For retrieval, follow `references/retrieval.md` and search the existing index first.
-- Run command help only when needed syntax is unknown or a command rejects the attempted syntax.
-- Run `za-cli --json app doctor` only after a CLI connectivity or dependency failure. Use `app doctor --deep` only for explicit index diagnosis.
-- On `INDEX_UNINITIALIZED`, run `za-cli --json index update` once before retrying search. For explicit freshness, queue known Items with `index refresh --item KEY`; use synchronous `index update --collection PATH` for a known Collection. Do not run a full-library update in the request path when the changed scope is unknown.
-- When a recently added Zotero Item is missing from semantic search, inspect `index status`. A stopped worker means maintenance is degraded; restore the user service before treating the Item as absent. Metadata-only Items still require catalog lookup/list behavior because semantic search indexes usable source content.
+- Semantic search across PDF and Markdown contents.
+- Library and Collection browsing.
+- Canonical Markdown storage alongside PDFs.
+- Local PDF/EPUB import and metadata recognition.
 
-## Workflow boundary
+Start the requested operation directly. Use command `--help` when syntax is unknown, not as routine preparation. Zotero's Extension starts the indexing worker and shows its status in the **Agentibility Console**.
 
-CLI help owns installed command names, arguments, and options. This Skill owns the multi-command workflows, source-verification rules, and safety invariants below because command help cannot express them.
+## Common workflows
 
-The installed CLI provides local semantic `search`, explicit index management, confirmed local PDF/EPUB `add file`, Full Text writes, and top-level `resolve` for documents already in Zotero. Identifier/URL ingest, merge, and arbitrary metadata/Collection editing remain unavailable. The accepted native-first expansion is tracked in repository docs and is not exposed by this Skill until it appears in `za-cli --help`.
+### A1: Search contents in the library
 
-## Route
+```bash
+za-cli --json search "stability proof" --limit 5
+za-cli --json lookup ITEM_KEY
+za-cli --json read ITEM_KEY --start 1 --limit 40
+```
 
-- For semantic discovery, reading a known Item Key, quotation, or source verification, read and follow [references/retrieval.md](references/retrieval.md).
-- For catalog listing, use `ls`; it defaults to My Library, accepts a Collection path, and accepts `--collection KEY` for an explicit Collection. Item Keys identify Literature Items. Canonical absolute paths begin with `/My Library/`; `My Library/...` is accepted as the same absolute path. If a path is ambiguous, use the reported Collection Key with `ls --collection`.
-- For additions, metadata changes, Collection Membership, full-text changes, duplicate handling, or removal, read and follow [references/mutations.md](references/mutations.md).
-- For adopting existing `source.md` or paper-named Markdown attachments in bulk, read and follow [references/migration.md](references/migration.md).
+Search first, then read promising sources before answering. For filtering, quotations, and source verification, read [references/retrieval.md](references/retrieval.md).
 
-## Invariants
+### A2: Convert a PDF to canonical Markdown
 
-- A tagged Markdown child attachment is canonical Full Text regardless of PDF changes. Zotero Notes and Annotations are never Full Text.
-- Search and read are side-effect-free. When initialization or explicit freshness requires indexing, run it as a separate visible command; never hide it inside search.
-- Foreground retrieval reads the existing index; maintenance is not a prerequisite for search. Never ask the user to maintain the index manually.
-- Treat search snippets as leads. Read the source Passage before making a factual claim.
-- Cite verified claims as `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF, page N]`. Never infer PDF pages for Markdown.
-- Never write `zotero.sqlite`, execute arbitrary Zotero JavaScript, permanently delete data, or write to a group library.
+1. When requested, use an available conversion skill to convert the PDF to Markdown.
+2. Review the output against the PDF.
+3. With the user's approval, import it under the Literature Item:
+
+```bash
+za-cli --json fulltext import ITEM_KEY /path/to/fulltext.md --confirm
+```
+
+Zotero stores the Markdown attachment; the background worker updates the index. Do not wait for embedding or ask the user to maintain the index manually.
+
+### A3: Resolve a standalone document
+
+For a PDF/EPUB already in Zotero without a parent Literature Item, get the user's approval and run:
+
+```bash
+za-cli --json resolve ATTACHMENT_KEY --confirm
+```
+
+Use the returned `parent_item_key` for subsequent Full Text imports. If recognition is unresolved, report it rather than guessing metadata. For reviewed-Markdown fallback and write outcomes, read [references/mutations.md](references/mutations.md).
+
+### A4: Add a local PDF or EPUB
+
+With the user's approval:
+
+```bash
+za-cli --json add file /path/to/paper.pdf --confirm
+```
+
+This preserves the local file, copies it into Zotero, and attempts metadata recognition. For an existing parent, Collection placement, and duplicate handling, read [references/mutations.md](references/mutations.md).
+
+### A5: Browse the library
+
+```bash
+za-cli --json ls
+za-cli --json ls --collection COLLECTION_KEY
+```
+
+For bulk adoption of existing Markdown attachments, read [references/migration.md](references/migration.md).
+
+## Rules
+
+- Zotero owns its data. Writes require user intent and the installed confirmed commands; never write its database/storage directly, execute arbitrary Zotero JavaScript, permanently delete data, or write to group libraries.
+- A child attachment tagged `za-cli:md` is canonical Full Text, even after PDF changes. Notes and Annotations are not Full Text.
+- Search and read do not change the library or trigger indexing. Do not run doctor or index maintenance before ordinary retrieval.
+- On a connectivity/dependency failure, use `za-cli --json app doctor`. For missing recent semantic results, inspect `index status` and Zotero's Agentibility Console; a missing semantic result does not prove the Item is absent from Zotero. Follow the retrieval reference for index initialization or explicit freshness.
+- Cite verified passages as `[ITEM_KEY, fulltext.md, lines N–M]` or `[ITEM_KEY, PDF, page N]`. Never infer PDF pages from Markdown or treat search snippets as verified claims.
+
+Use `$rwzSkillDir` for the absolute path to this skill directory. Replace it with that quoted path in Bash commands. Do not inspect the repository or read a bundled script unless its command fails.

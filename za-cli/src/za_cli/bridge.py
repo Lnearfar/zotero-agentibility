@@ -9,7 +9,8 @@ from .errors import CliError
 from .http import request
 
 PROTOCOL = 1
-OPERATIONS = {"health", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file"}
+OPERATIONS = {"health", "index_catalog", "fulltext_adopt", "fulltext_import", "metadata_resolve", "add_file"}
+_READ_OPERATIONS = {"health", "index_catalog"}
 PATH = "/zotero-agentibility/v1/operation"
 _TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -59,7 +60,7 @@ class BridgeClient:
                 timeout=300 if operation != "health" else 3,
             )
         except CliError as error:
-            if operation != "health" and error.code == "ZOTERO_UNAVAILABLE":
+            if operation not in _READ_OPERATIONS and error.code == "ZOTERO_UNAVAILABLE":
                 raise CliError(
                     "WRITE_OUTCOME_UNKNOWN",
                     "Connection to Zotero was lost during the write; inspect the item before retrying",
@@ -69,7 +70,7 @@ class BridgeClient:
         try:
             data = response.json()
         except CliError as error:
-            if operation != "health":
+            if operation not in _READ_OPERATIONS:
                 raise CliError(
                     "WRITE_OUTCOME_UNKNOWN",
                     "Zotero returned an incomplete write response; inspect the item before retrying",
@@ -83,7 +84,7 @@ class BridgeClient:
                 if error.get("retryable") is True:
                     details = {**details, "retryable": True}
                 raise CliError(error["code"], str(error.get("message") or "Bridge operation failed"), details=details or None)
-            if operation != "health":
+            if operation not in _READ_OPERATIONS:
                 raise CliError(
                     "WRITE_OUTCOME_UNKNOWN",
                     "Zotero returned an unrecognized write error; inspect the item before retrying",
@@ -92,7 +93,7 @@ class BridgeClient:
             raise CliError("BRIDGE_HTTP_ERROR", f"Bridge returned HTTP {response.status}")
         protocol = data.get("protocol") if isinstance(data, dict) else None
         if protocol != PROTOCOL or not isinstance(data, dict) or data.get("ok") is not True:
-            if operation != "health":
+            if operation not in _READ_OPERATIONS:
                 raise CliError(
                     "WRITE_OUTCOME_UNKNOWN",
                     "Zotero returned an invalid write result; inspect the item before retrying",
@@ -108,6 +109,17 @@ class BridgeClient:
 
     def health(self) -> dict:
         return self.operation("health", {})
+
+    def index_catalog(self, item_keys: list[str] | None = None) -> dict:
+        if item_keys is not None and (
+            not isinstance(item_keys, list) or len(item_keys) > 100
+            or any(not isinstance(key, str) or not re.fullmatch(r"[A-Z0-9]{8}", key) for key in item_keys)
+        ):
+            raise CliError("INVALID_ITEM_KEY", "Index catalog requires at most 100 valid Zotero Item Keys")
+        response = self.operation("index_catalog", {"item_keys": item_keys})
+        if response.get("operation") != "index_catalog" or not isinstance(response.get("result"), dict):
+            raise CliError("INVALID_CATALOG_RESPONSE", "Zotero returned an invalid index catalog result")
+        return response["result"]
 
     def add_file(
         self,

@@ -210,14 +210,11 @@ class SemanticTests(unittest.TestCase):
         self.assertEqual(set(self.collection.rows), {"ABCD1234#0"})
 
     def test_full_update_removes_deleted_literature_item(self):
-        self.db.items["EFGH5678"] = {"title": "B", "typeName": "book", "fields": {}, "creators": [], "tags": []}
         self.update()
-        self.source.write_text("other", encoding="utf-8")
-        self.update()
-        self.db.items.pop("EFGH5678")
+        self.db.items.pop("ABCD1234")
         report = self.update()
-        self.assertGreaterEqual(report["removed"], 1)
-        self.assertFalse(any(row["metadata"]["item_key"] == "EFGH5678" for row in self.collection.rows.values()))
+        self.assertEqual(report["removed"], 1)
+        self.assertNotIn("ABCD1234#0", self.collection.rows)
 
     def test_scoped_update_removes_requested_deleted_item(self):
         self.update()
